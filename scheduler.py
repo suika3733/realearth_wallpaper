@@ -220,7 +220,7 @@ def _scheduler_loop():
                     continue
 
                 today = datetime.now().strftime("%Y-%m-%d")
-                last_update = config.get("last_update", "")
+                last_update = config.get("last_update") or ""
                 if last_update.startswith(today):
                     update_time = config.get("update_time", "09:00")
                     tomorrow = datetime.now() + timedelta(days=1)
