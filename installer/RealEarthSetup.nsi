@@ -57,7 +57,7 @@ VIAddVersionKey "Comments" "实时地球壁纸"
 !insertmacro MUI_PAGE_WELCOME
 
 ; 许可协议页
-!insertmacro MUI_PAGE_LICENSE "${SRC_DIR}\..\license.txt"
+!insertmacro MUI_PAGE_LICENSE "license.txt"
 
 ; 安装目录页
 !insertmacro MUI_PAGE_DIRECTORY
@@ -94,9 +94,9 @@ Section "RealEarth 主程序" SecApp
   SectionIn RO
   SetOutPath "$INSTDIR"
   ; 复制 onedir 打包的所有文件
-  File /r "${SRC_DIR}\*.*"
+  File /r "/workspace/live-earth-wallpaper/RealEarth/"
   ; 复制使用说明
-  File "${SRC_DIR}\..\使用说明.txt"
+  File "/workspace/live-earth-wallpaper/README.txt"
   ; 写入卸载信息
   WriteUninstaller "$INSTDIR\uninstall.exe"
   ; 注册表 - 安装信息
