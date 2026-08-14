@@ -1,5 +1,5 @@
 ; RealEarth 真实地球壁纸 - NSIS 安装脚本
-; 编译: makensis /DMY_OUTPUT=RealEarthSetup-v3.1.3.exe /DSRC_DIR=dist-dir/RealEarth RealEarthSetup.nsi
+; 编译: makensis /DMY_OUTPUT=RealEarthSetup-v3.1.4.exe /DSRC_DIR=dist-dir/RealEarth RealEarthSetup.nsi
 
 ; 必须指定 Unicode 以获得中文支持
 Unicode true
@@ -7,13 +7,13 @@ Unicode true
 ;----------- 版本信息 ----------
 !define APP_NAME "RealEarth"
 !define APP_DISPLAY_NAME "RealEarth 真实地球壁纸"
-!define APP_VERSION "3.1.3"
+!define APP_VERSION "3.1.4"
 !define APP_PUBLISHER "RealEarth"
 !define APP_WEB "https://github.com/suika3733/realearth_wallpaper"
 
 ; 允许通过命令行传入
 !ifndef MY_OUTPUT
-  !define MY_OUTPUT "RealEarthSetup-v3.1.3.exe"
+  !define MY_OUTPUT "RealEarthSetup-v3.1.4.exe"
 !endif
 !ifndef SRC_DIR
   !define SRC_DIR "installer\source\RealEarth"
@@ -32,7 +32,7 @@ SetCompressorDictSize 32
 !define APP_ICON "RealEarth.ico"
 Icon "${APP_ICON}"
 UninstallIcon "${APP_ICON}"
-VIProductVersion "3.1.3.0"
+VIProductVersion "3.1.4.0"
 VIAddVersionKey "ProductName" "${APP_DISPLAY_NAME}"
 VIAddVersionKey "ProductVersion" "${APP_VERSION}"
 VIAddVersionKey "FileVersion" "${APP_VERSION}"

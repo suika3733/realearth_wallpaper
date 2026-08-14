@@ -527,7 +527,7 @@ def api_logs_read():
 @app.route("/api/version")
 def api_version():
     """返回当前版本号"""
-    return jsonify({"version": "v3.1.3"})
+    return jsonify({"version": "v3.1.4"})
 
 
 # ================================================================

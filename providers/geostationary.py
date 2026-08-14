@@ -26,8 +26,8 @@ try:
 except Exception:
     _SSL_CTX = ssl._create_unverified_context()
 
-# 网络请求超时（秒）
-_TIMEOUT = 15
+# 网络请求超时（秒）—— CIRA 位于美国，跨洋访问较慢，适当放宽
+_TIMEOUT = 25
 
 # ---------------------------------------------------------------------------
 # 卫星元数据
@@ -118,8 +118,16 @@ def _download_tile(url: str) -> Image.Image:
     from urllib3.util.retry import Retry
 
     session = requests.Session()
-    retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
-    session.mount("https://", HTTPAdapter(max_retries=retry))
+    # 连接/读取超时也重试，CIRA 跨洋网络不稳定
+    retry = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        backoff_factor=0.8,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    session.mount("https://", HTTPAdapter(max_retries=retry, pool_connections=16, pool_maxsize=16))
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -169,7 +177,8 @@ def fetch_satellite_image(
 
     try:
         scale = _calc_scale(satellite, target_size)
-        base_url, time_code = _build_url(satellite, scale, color)
+        # 仅获取最新时间戳，瓦片 URL 在下载时按实际 scale 构建
+        time_code, _ = _get_time_code(satellite, color)
     except ConnectionError:
         raise  # 向上传递网络错误，让 GUI 显示友好提示
 
@@ -191,23 +200,41 @@ def fetch_satellite_image(
 
     logger.info(f"Fetching {satellite} ({color}), scale={scale}, {tiles_n}x{tiles_n} tiles")
 
-    # 并行下载所有瓦片
-    tile_map: dict[tuple[int, int], Image.Image] = {}
+    # 并行下载所有瓦片；若瓦片缺失（跨洋网络不稳定），自动降级到更低 scale 重试，
+    # 确保始终能出图。time_code 复用开头获取到的最新时间戳，避免重复请求。
+    for attempt_scale in range(scale, -1, -1):
+        s_n = 2 ** attempt_scale
+        # 基于相同 time_code 构建该 scale 的瓦片基础 URL
+        from datetime import datetime as _dt
+        _d = _dt.strptime(str(time_code), "%Y%m%d%H%M%S").strftime("%Y/%m/%d")
+        s_base = f"{RAMMB_BASE}/data/imagery/{_d}/{satellite}---full_disk/{color}/{time_code}/0{attempt_scale}"
+        tile_map: dict[tuple[int, int], Image.Image] = {}
 
-    def _fetch(row: int, col: int):
-        url = f"{base_url}/{str(row).zfill(3)}_{str(col).zfill(3)}.png"
-        img = _download_tile(url)
-        return (row, col), img
+        def _fetch(row: int, col: int):
+            url = f"{s_base}/{str(row).zfill(3)}_{str(col).zfill(3)}.png"
+            img = _download_tile(url)
+            return (row, col), img
 
-    with ThreadPoolExecutor(max_workers=min(tiles_n * tiles_n, 16)) as pool:
-        futures = {pool.submit(_fetch, r, c): (r, c)
-                   for r in range(tiles_n) for c in range(tiles_n)}
-        for future in as_completed(futures):
-            try:
-                pos, img = future.result()
-                tile_map[pos] = img
-            except Exception as e:
-                logger.warning(f"Tile download failed: {e}")
+        with ThreadPoolExecutor(max_workers=min(s_n * s_n, 16)) as pool:
+            futures = {pool.submit(_fetch, r, c): (r, c)
+                       for r in range(s_n) for c in range(s_n)}
+            for future in as_completed(futures):
+                try:
+                    pos, img = future.result()
+                    tile_map[pos] = img
+                except Exception as e:
+                    logger.warning(f"Tile download failed: {e}")
+
+        expected = s_n * s_n
+        if len(tile_map) >= expected:
+            scale = attempt_scale
+            tiles_n = s_n
+            tilesize = SATELLITE_SIZES[satellite]
+            # 缓存路径随实际 scale 更新
+            cache_path = _cache_path(satellite, color, scale, time_code)
+            break
+        logger.warning(f"Tile download incomplete ({len(tile_map)}/{expected}), "
+                       f"degrading to scale {attempt_scale - 1}")
 
     if not tile_map:
         logger.error("All tile downloads failed")
