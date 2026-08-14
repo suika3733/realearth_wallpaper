@@ -7,7 +7,7 @@ from config import load_config, save_config, load_metadata, save_metadata
 from nasa_api import fetch_apod, download_image
 from categorizer import categorize_image
 from wallpaper import set_wallpaper, watermark_image
-from providers import GEOSTATIONARY_SATELLITES, fetch_satellite_image, fetch_sdo_image
+from providers import GEOSTATIONARY_SATELLITES, fetch_satellite_image, fetch_sdo_image, fetch_fy4_image, get_fy4_capture_time
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ _next_refresh = {
     "apod": None,
     "satellite": None,
     "sdo": None,
+    "fy4": None,
 }
 
 
@@ -27,6 +28,7 @@ _last_refresh_time = {
     "apod": None,
     "satellite": None,
     "sdo": None,
+    "fy4": None,
 }
 
 
@@ -115,7 +117,7 @@ def check_and_update_satellite() -> bool:
     except Exception as e:
         logger.warning(f"Get satellite capture time failed: {e}")
 
-    path = fetch_satellite_image(satellite=sat, color=color, target_size=size)
+    path = fetch_satellite_image(satellite=sat, color=color, target_size=size, force=True)
     if not path:
         logger.warning("Satellite image download failed")
         return False
@@ -188,6 +190,50 @@ def check_and_update_sdo() -> bool:
     return False
 
 
+def check_and_update_fy4() -> bool:
+    """风云四号影像更新"""
+    config = load_config()
+    style = config.get("wallpaper_style", "fill")
+    auto_set = config.get("fy4_auto_set_wallpaper", True)
+    size = config.get("fy4_size", 1080)
+
+    logger.info(f"FY-4 update: target_size={size}")
+
+    # 影像实际更新时间（北京时间），用于水印展示
+    capture_time = None
+    try:
+        capture_time = get_fy4_capture_time()
+    except Exception as e:
+        logger.warning(f"Get FY-4 capture time failed: {e}")
+
+    path = fetch_fy4_image(target_size=size, force=True)
+    if not path:
+        logger.warning("FY-4 image download failed")
+        return False
+
+    now = datetime.now()
+    # 仅当开启「自动设为壁纸」时才真正设置壁纸
+    if not auto_set:
+        logger.info("FY-4 auto-set-wallpaper disabled, skip setting wallpaper")
+        return True
+
+    wp_path = watermark_image(path,
+        left_text="来源: 风云四号 FY-4B (NSMC)",
+        right_text=f"更新时间: {capture_time.strftime('%Y-%m-%d %H:%M') if capture_time else now.strftime('%Y-%m-%d %H:%M')} (UTC+8)",
+        output_key=f"fy4")
+    if set_wallpaper(
+        wp_path, f"fy4", style=style,
+        scale=config.get("wp_scale", 1.0),
+        offset_x=config.get("wp_offset_x", 0),
+        offset_y=config.get("wp_offset_y", 0),
+    ):
+        config["last_fy4_update"] = now.strftime("%Y-%m-%d %H:%M:%S")
+        save_config(config)
+        logger.info(f"FY-4 wallpaper updated")
+        return True
+    return False
+
+
 def get_next_refresh_info() -> dict:
     """返回各数据源下次刷新时间与当前开关状态，供前端展示倒计时"""
     config = load_config()
@@ -196,11 +242,13 @@ def get_next_refresh_info() -> dict:
         "auto_update": config.get("auto_update", True),
         "satellite_auto_refresh": config.get("satellite_auto_refresh", True),
         "sdo_auto_refresh": config.get("sdo_auto_refresh", True),
+        "fy4_auto_refresh": config.get("fy4_auto_refresh", True),
         "sat_auto_set_wallpaper": config.get("sat_auto_set_wallpaper", True),
         "sdo_auto_set_wallpaper": config.get("sdo_auto_set_wallpaper", True),
-        "apod_auto_set_wallpaper": config.get("apod_auto_set_wallpaper", True),
+        "fy4_auto_set_wallpaper": config.get("fy4_auto_set_wallpaper", True),
         "satellite_refresh_interval": config.get("satellite_refresh_interval", 10),
         "sdo_refresh_interval": config.get("sdo_refresh_interval", 60),
+        "fy4_refresh_interval": config.get("fy4_refresh_interval", 15),
         "next_refresh": {k: (v.isoformat() if v else None) for k, v in _next_refresh.items()},
         "running": is_scheduler_running(),
     }
@@ -243,6 +291,20 @@ def _scheduler_loop():
                     _next_refresh["sdo"] = _last_refresh_time["sdo"] + timedelta(minutes=sdo_interval)
                     logger.info(f"SDO refresh due, running check (interval={sdo_interval}m)")
                     check_and_update_sdo()
+                _stop_event.wait(15)
+
+            elif data_source == "fy4":
+                fy4_auto = config.get("fy4_auto_refresh", True)
+                fy4_interval = config.get("fy4_refresh_interval", 15)
+                if not fy4_auto:
+                    _next_refresh["fy4"] = None
+                    _stop_event.wait(15)
+                    continue
+                if _due("fy4", fy4_interval):
+                    _last_refresh_time["fy4"] = datetime.now()
+                    _next_refresh["fy4"] = _last_refresh_time["fy4"] + timedelta(minutes=fy4_interval)
+                    logger.info(f"FY-4 refresh due, running check (interval={fy4_interval}m)")
+                    check_and_update_fy4()
                 _stop_event.wait(15)
 
             else:

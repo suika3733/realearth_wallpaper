@@ -28,6 +28,9 @@ DEFAULT_CONFIG = {
     "sdo_size": 2048,                   # SDO 目标尺寸
     "sdo_auto_refresh": True,           # SDO 自动刷新
     "sdo_refresh_interval": 60,         # SDO 刷新间隔（分钟）
+    "fy4_size": 1080,                   # FY-4 目标尺寸
+    "fy4_auto_refresh": True,           # FY-4 自动刷新
+    "fy4_refresh_interval": 15,         # FY-4 刷新间隔（分钟）
     "earth_resolution": 2200,           # [兼容] Himawari-8 分辨率
     "earth_auto_refresh": True,         # [兼容]
     "earth_refresh_interval": 10,       # [兼容]
@@ -38,6 +41,7 @@ DEFAULT_CONFIG = {
     "apod_auto_set_wallpaper": True,   # APOD 每日更新后自动设为壁纸
     "sat_auto_set_wallpaper": True,    # 卫星自动刷新后自动设为壁纸
     "sdo_auto_set_wallpaper": True,    # SDO 自动刷新后自动设为壁纸
+    "fy4_auto_set_wallpaper": True,    # FY-4 自动刷新后自动设为壁纸
     "autostart": False,                # 开机自启动
     "wm_font_size": 0,                 # 水印字体大小（0=自适应）
     "wm_font_family": "msyh",          # 水印字体

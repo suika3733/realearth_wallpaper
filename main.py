@@ -17,7 +17,7 @@ from nasa_api import fetch_apod_range, download_image, ApodImage
 from categorizer import categorize_image, get_category_name, get_all_category_keys
 from wallpaper import set_wallpaper, watermark_image
 from scheduler import start_scheduler, stop_scheduler, is_scheduler_running, check_and_update
-from providers import GEOSTATIONARY_SATELLITES, SDO_BANDS, fetch_satellite_image, fetch_sdo_image
+from providers import GEOSTATIONARY_SATELLITES, SDO_BANDS, fetch_satellite_image, fetch_sdo_image, fetch_fy4_image, get_fy4_capture_time
 from autostart import is_autostart_enabled, set_autostart
 
 logging.basicConfig(
@@ -114,6 +114,12 @@ class NASAApp:
         self._sdo_timer_id = None
         self._sdo_next_refresh = None
 
+        self.fy4_image_path = None
+        self.fy4_auto_refresh = self.config.get("fy4_auto_refresh", True)
+        self.fy4_refresh_interval = self.config.get("fy4_refresh_interval", 15)
+        self._fy4_timer_id = None
+        self._fy4_next_refresh = None
+
         # satellite panel vars
         self.selected_satellite = tk.StringVar(value=self.config.get("satellite_id", "himawari"))
         self.selected_color = tk.StringVar(value=self.config.get("satellite_color", "natural_color"))
@@ -171,6 +177,12 @@ class NASAApp:
                                     width=90, height=30, bg="#1a3a4a",
                                     hover_bg="#0f3460", font=(FONT_FAMILY[0], 9))
         self.btn_sdo.pack(side="left", padx=2)
+
+        self.btn_fy4 = ModernButton(ds_frame, text="🌏 风云四号",
+                                    command=lambda: self._switch_panel("fy4"),
+                                    width=90, height=30, bg="#1a3a4a",
+                                    hover_bg="#0f3460", font=(FONT_FAMILY[0], 9))
+        self.btn_fy4.pack(side="left", padx=2)
 
         # 右上角按钮
         menu_frame = tk.Frame(header, bg=BG_CARD)
@@ -430,6 +442,76 @@ class NASAApp:
                                        width=100, height=32, bg=ACCENT, hover_bg=ACCENT_HOVER)
         self.btn_sdo_wp.pack(side="left", padx=2)
 
+        # === 风云四号面板 ===
+        self.panel_fy4 = tk.Frame(body, bg=BG_MAIN)
+
+        fy4_left = tk.Frame(self.panel_fy4, bg=BG_MAIN, width=170)
+        fy4_left.pack(side="left", fill="y", padx=(0, 10))
+        fy4_left.pack_propagate(False)
+
+        tk.Label(fy4_left, text="🌏 风云四号", bg=BG_MAIN, fg=FG_TEXT,
+                 font=FONT_TITLE).pack(anchor="w", pady=(0, 8))
+
+        tk.Label(fy4_left, text="数据来源\n━━━━━━━━━━━━\n国家卫星气象中心\nNSMC\n\n分辨率:", bg=BG_MAIN,
+                 fg=FG_DIM, font=FONT_SMALL, justify="left").pack(anchor="w", pady=(0, 4))
+
+        self.fy4_size_var = tk.StringVar(value=str(self.config.get("fy4_size", 1080)))
+        fy4_sz_frame = tk.Frame(fy4_left, bg=BG_MAIN)
+        fy4_sz_frame.pack(fill="x", pady=(0, 8))
+        for val, lab in [("1080", "1080p"), ("2048", "2K"), ("3840", "4K")]:
+            tk.Radiobutton(fy4_sz_frame, text=lab, variable=self.fy4_size_var, value=val,
+                           bg=BG_MAIN, fg=FG_TEXT, selectcolor=BG_INPUT,
+                           activebackground=BG_MAIN, activeforeground=FG_TEXT,
+                           font=FONT_SMALL).pack(anchor="w")
+
+        fy4_info_card = tk.Frame(fy4_left, bg=BG_CARD, highlightbackground=BORDER, highlightthickness=1)
+        fy4_info_card.pack(fill="both", expand=True, pady=(8, 0))
+        tk.Label(fy4_info_card, text="更新频率\n约每 15 分钟\n自动刷新每 15 分钟",
+                 bg=BG_CARD, fg=FG_DIM, font=FONT_SMALL, justify="left", padx=8, pady=8).pack(fill="both")
+
+        # FY-4 预览区
+        fy4_right = tk.Frame(self.panel_fy4, bg=BG_MAIN)
+        fy4_right.pack(side="left", fill="both", expand=True)
+
+        fy4_preview = tk.Frame(fy4_right, bg=BG_CARD, highlightbackground=BORDER, highlightthickness=1)
+        fy4_preview.pack(fill="both", expand=True, pady=(0, 10))
+
+        self.fy4_preview = tk.Label(fy4_preview, bg=BG_CARD,
+                                    text="🌏\n点击获取风云四号最新影像",
+                                    fg=FG_DIM, font=(FONT_FAMILY[0], 14))
+        self.fy4_preview.pack(fill="both", expand=True)
+
+        self.fy4_status = tk.Label(fy4_preview, bg=BG_CARD, fg=FG_DIM, font=FONT_SMALL)
+        self.fy4_status.place(relx=0.02, rely=0.97, anchor="sw")
+
+        # FY-4 底部控制
+        fy4_ctrl = tk.Frame(fy4_right, bg=BG_MAIN, height=45)
+        fy4_ctrl.pack(fill="x", side="bottom")
+        fy4_ctrl.pack_propagate(False)
+
+        self.btn_fy4_fetch = ModernButton(fy4_ctrl, text="📡 获取最新影像",
+                                          command=self._fetch_fy4,
+                                          width=120, height=32, bg=SAT_ACCENT, hover_bg="#00d4f4")
+        self.btn_fy4_fetch.pack(side="left", padx=(20, 2))
+
+        self.btn_fy4_auto = ModernButton(fy4_ctrl,
+                                         text="🔄 自动刷新: 开" if self.fy4_auto_refresh else "🔄 自动刷新: 关",
+                                         command=self._toggle_fy4_auto_refresh,
+                                         width=120, height=32,
+                                         bg=GREEN if self.fy4_auto_refresh else ACCENT2,
+                                         hover_bg="#6ee7c5" if self.fy4_auto_refresh else "#1a4a7a")
+        self.btn_fy4_auto.pack(side="left", padx=5)
+
+        self.fy4_countdown = tk.Label(fy4_ctrl, text="", bg=BG_MAIN, fg=FG_DIM, font=(FONT_FAMILY[0], 9))
+        self.fy4_countdown.pack(side="left", padx=8)
+
+        right_fy4 = tk.Frame(fy4_ctrl, bg=BG_MAIN)
+        right_fy4.pack(side="right")
+        self.btn_fy4_wp = ModernButton(right_fy4, text="🖼 设为壁纸",
+                                       command=self._set_fy4_wallpaper,
+                                       width=100, height=32, bg=ACCENT, hover_bg=ACCENT_HOVER)
+        self.btn_fy4_wp.pack(side="left", padx=2)
+
         # ---- 状态栏 ----
         self.status_bar = tk.Label(self.root, text="就绪", bg=BG_CARD, fg=FG_DIM,
                                    font=FONT_SMALL, anchor="w", padx=15)
@@ -442,15 +524,16 @@ class NASAApp:
         save_config(self.config)
 
         # 隐藏所有面板
-        for p in [self.panel_apod, self.panel_sat, self.panel_sdo]:
+        for p in [self.panel_apod, self.panel_sat, self.panel_sdo, self.panel_fy4]:
             p.pack_forget()
 
         # 停止所有计时器
         self._stop_sat_refresh_timer()
         self._stop_sdo_refresh_timer()
+        self._stop_fy4_refresh_timer()
 
         # 重置按钮样式
-        for btn in [self.btn_apod, self.btn_sat, self.btn_sdo]:
+        for btn in [self.btn_apod, self.btn_sat, self.btn_sdo, self.btn_fy4]:
             btn._bg = "#1a3a4a"
             btn._hover_bg = "#0f3460"
             btn._draw("#1a3a4a")
@@ -478,6 +561,13 @@ class NASAApp:
             band = self.config.get("sdo_band", "0304")
             self._update_status(f"太阳观测模式 | {SDO_BANDS.get(band, {}).get('name', band)}")
             self._start_sdo_refresh_timer()
+        elif source == "fy4":
+            self.panel_fy4.pack(fill="both", expand=True)
+            self.btn_fy4._bg = SAT_ACCENT
+            self.btn_fy4._hover_bg = "#00d4f4"
+            self.btn_fy4._draw(SAT_ACCENT)
+            self._update_status("风云四号模式 | FY-4B 真彩色全圆盘 (NSMC)")
+            self._start_fy4_refresh_timer()
 
     # ========== APOD 数据操作 ==========
     def _rebuild_category_data(self):
@@ -953,6 +1043,140 @@ class NASAApp:
                 self.root.after(0, lambda: self._update_status("☀ SDO 已自动刷新", color=GREEN))
         except Exception as e:
             logger.error(f"SDO auto-refresh error: {e}")
+
+    # ========== 风云四号事件 ==========
+    def _fetch_fy4(self):
+        size = int(self.fy4_size_var.get())
+        self.config["fy4_size"] = size
+        save_config(self.config)
+        self._update_status(f"⏳ 正在获取风云四号影像...", color=YELLOW)
+        self.fy4_preview.config(text="⏳\n正在获取风云四号影像...", fg=FG_DIM)
+        threading.Thread(target=self._do_fetch_fy4, args=(size,), daemon=True).start()
+
+    def _do_fetch_fy4(self, size: int):
+        try:
+            path = fetch_fy4_image(target_size=size)
+            if path:
+                self.fy4_image_path = path
+                self.root.after(0, lambda: self._load_preview(path, self.fy4_preview, self.fy4_status,
+                    f"🌏 风云四号 FY-4B"))
+                self.root.after(0, lambda: self._update_status(
+                    f"风云四号影像已更新 | FY-4B 真彩色", color=GREEN))
+            else:
+                self.root.after(0, lambda: self.fy4_preview.config(
+                    text="❌ 获取失败\n数据暂时不可用，请稍后重试", fg=ACCENT))
+                self.root.after(0, lambda: self._update_status("❌ 获取失败", color=ACCENT))
+        except Exception as e:
+            logger.error(f"FY-4 fetch error: {e}")
+            self.root.after(0, lambda: self.fy4_preview.config(text=f"❌ {str(e)[:60]}", fg=ACCENT))
+            self.root.after(0, lambda: self._update_status(f"❌ {e}", color=ACCENT))
+
+    def _set_fy4_wallpaper(self):
+        if not self.fy4_image_path or not Path(self.fy4_image_path).exists():
+            messagebox.showwarning("提示", "请先获取风云四号影像")
+            return
+        style = self.config.get("wallpaper_style", "fill")
+        now = datetime.now()
+        capture_time = None
+        try:
+            capture_time = get_fy4_capture_time()
+        except Exception as e:
+            logger.warning(f"Get FY-4 capture time for wallpaper: {e}")
+        wp_path = watermark_image(
+            self.fy4_image_path,
+            left_text="来源: 风云四号 FY-4B (NSMC)",
+            right_text=f"更新时间: {capture_time.strftime('%Y-%m-%d %H:%M') if capture_time else now.strftime('%Y-%m-%d %H:%M')} (UTC+8)",
+            output_key=f"fy4",
+        )
+        if set_wallpaper(wp_path, f"fy4", style=style):
+            self._update_status(f"壁纸已设置 | 风云四号 FY-4B | 后台持续自动更新", color=GREEN)
+        else:
+            messagebox.showerror("错误", "壁纸设置失败")
+
+    # ========== 风云四号自动刷新 ==========
+    def _toggle_fy4_auto_refresh(self):
+        self.fy4_auto_refresh = not self.fy4_auto_refresh
+        self.config["fy4_auto_refresh"] = self.fy4_auto_refresh
+        save_config(self.config)
+        if self.fy4_auto_refresh:
+            self.btn_fy4_auto._bg = GREEN
+            self.btn_fy4_auto._hover_bg = "#6ee7c5"
+            self.btn_fy4_auto._text = "🔄 自动刷新: 开"
+            self.btn_fy4_auto._draw(GREEN)
+            self._start_fy4_refresh_timer()
+            self._update_status("风云四号自动刷新已开启", color=GREEN)
+        else:
+            self.btn_fy4_auto._bg = ACCENT2
+            self.btn_fy4_auto._hover_bg = "#1a4a7a"
+            self.btn_fy4_auto._text = "🔄 自动刷新: 关"
+            self.btn_fy4_auto._draw(ACCENT2)
+            self._stop_fy4_refresh_timer()
+            self._update_status("风云四号自动刷新已关闭")
+
+    def _start_fy4_refresh_timer(self):
+        if not self.fy4_auto_refresh:
+            return
+        if self._fy4_timer_id:
+            self.root.after_cancel(self._fy4_timer_id)
+        self._fy4_next_refresh = datetime.now() + timedelta(minutes=self.fy4_refresh_interval)
+        self._update_fy4_countdown()
+        self._fy4_timer_id = self.root.after(1000, self._fy4_tick)
+
+    def _stop_fy4_refresh_timer(self):
+        if self._fy4_timer_id:
+            self.root.after_cancel(self._fy4_timer_id)
+            self._fy4_timer_id = None
+        self._fy4_next_refresh = None
+        self.fy4_countdown.config(text="")
+
+    def _fy4_tick(self):
+        if not self.fy4_auto_refresh:
+            return
+        now = datetime.now()
+        remaining = max(0, (self._fy4_next_refresh - now).total_seconds())
+        if remaining <= 0:
+            self._fy4_next_refresh = now + timedelta(minutes=self.fy4_refresh_interval)
+            self.fy4_countdown.config(text="⏳ 刷新中...")
+            size = self.config.get("fy4_size", 1080)
+            threading.Thread(target=self._do_fy4_auto_refresh, args=(size,), daemon=True).start()
+        else:
+            self._update_fy4_countdown()
+        self._fy4_timer_id = self.root.after(1000, self._fy4_tick)
+
+    def _update_fy4_countdown(self):
+        if not self._fy4_next_refresh:
+            return
+        remaining = max(0, (self._fy4_next_refresh - datetime.now()).total_seconds())
+        m, s = int(remaining // 60), int(remaining % 60)
+        self.fy4_countdown.config(text=f"⏱ {m:02d}:{s:02d}", fg=FG_DIM if m > 1 else YELLOW)
+
+    def _do_fy4_auto_refresh(self, size: int):
+        try:
+            path = fetch_fy4_image(target_size=size)
+            if not path:
+                return
+            self.fy4_image_path = path
+            self.root.after(0, lambda: self._load_preview(path, self.fy4_preview,
+                self.fy4_status, f"🌏 风云四号 FY-4B"))
+            if self.data_source == "fy4":
+                style = self.config.get("wallpaper_style", "fill")
+                now = datetime.now()
+                capture_time = None
+                try:
+                    capture_time = get_fy4_capture_time()
+                except Exception as e:
+                    logger.warning(f"Get FY-4 capture time: {e}")
+                wp_path = watermark_image(path,
+                    left_text="来源: 风云四号 FY-4B (NSMC)",
+                    right_text=f"更新时间: {capture_time.strftime('%Y-%m-%d %H:%M') if capture_time else now.strftime('%Y-%m-%d %H:%M')} (UTC+8)",
+                    output_key=f"fy4")
+                set_wallpaper(wp_path, f"fy4", style=style)
+                self.root.after(0, lambda: self._update_status(
+                    f"🌏 风云四号自动刷新 | {now.strftime('%H:%M')} | 壁纸同步更新", color=GREEN))
+            else:
+                self.root.after(0, lambda: self._update_status("🌏 风云四号影像已自动刷新", color=GREEN))
+        except Exception as e:
+            logger.error(f"FY-4 auto-refresh error: {e}")
 
     def _show_settings(self):
         win = tk.Toplevel(self.root)

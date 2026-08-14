@@ -33,7 +33,7 @@ _TIMEOUT = 15
 # 卫星元数据
 # ---------------------------------------------------------------------------
 GEOSTATIONARY_SATELLITES = {
-    "goes-16":      {"name": "GOES-16 (美洲)",      "size": 678, "region": "americas"},
+    "goes-19":      {"name": "GOES-19 (美洲)",      "size": 678, "region": "americas"},
     "goes-18":      {"name": "GOES-18 (美洲西)",     "size": 678, "region": "americas"},
     "himawari":     {"name": "Himawari-8 (亚太)",   "size": 688, "region": "asia_pacific"},
     "gk2a":         {"name": "GK2A (韩国)",          "size": 688, "region": "asia_pacific"},
@@ -54,6 +54,16 @@ RAMMB_BASE = "https://rammb-slider.cira.colostate.edu"
 # 缓存
 # ---------------------------------------------------------------------------
 SATELLITE_CACHE_DIR = IMAGE_CACHE_DIR / "satellite"
+
+# 卫星缓存有效期（秒）。CIRA 影像约每 10 分钟更新，设为 8 分钟 TTL
+# 避免在调度间隔内重复请求时永远命中缓存导致「永不更新」
+SATELLITE_CACHE_TTL = 480
+
+
+def _cache_path(satellite: str, color: str, scale: int, time_code: int) -> Path:
+    """构建缓存文件路径"""
+    cache_key = f"{satellite}_{color}_{scale}_{time_code}"
+    return SATELLITE_CACHE_DIR / f"{cache_key}.jpg"
 
 
 def _get_time_code(satellite: str, color: str) -> tuple[int, str]:
@@ -163,14 +173,17 @@ def fetch_satellite_image(
     except ConnectionError:
         raise  # 向上传递网络错误，让 GUI 显示友好提示
 
-    # 缓存路径
     SATELLITE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_key = f"{satellite}_{color}_{scale}_{time_code}"
-    cache_path = SATELLITE_CACHE_DIR / f"{cache_key}.jpg"
+    cache_path = _cache_path(satellite, color, scale, time_code)
 
+    # 缓存命中判断：文件存在且在有效期内
     if not force and cache_path.exists():
-        logger.info(f"Using cached: {cache_path}")
-        return str(cache_path)
+        import time as _t
+        age = _t.time() - cache_path.stat().st_mtime
+        if age < SATELLITE_CACHE_TTL:
+            logger.info(f"Using cached satellite (age={age:.0f}s): {cache_path}")
+            return str(cache_path)
+        logger.info(f"Satellite cache expired (age={age:.0f}s), re-downloading")
 
     # 瓦片数量: 2^scale x 2^scale
     tiles_n = 2 ** scale
