@@ -34,10 +34,48 @@ SDO_BANDS = {
 
 SDO_CACHE_DIR = IMAGE_CACHE_DIR / "sdo"
 
+# SDO 最新影像缓存有效期（秒）。URL 固定指向 latest_xxx.jpg，无时间戳，
+# 为避免缓存旧影像导致「永不更新」，默认 10 分钟内重新下载。
+SDO_CACHE_TTL = 600
+
 
 def _pick_resolution(target: int) -> int:
     """选择不小于 target 的最小可用分辨率"""
     return SDO_RESOLUTIONS[bisect.bisect_left(SDO_RESOLUTIONS, target)]
+
+
+def _cache_path(band: str, resolution: int) -> Path:
+    """SDO 缓存文件路径（固定文件名，配合 TTL 判断是否需要刷新）"""
+    return SDO_CACHE_DIR / f"sdo_{band}_{resolution}.jpg"
+
+
+def get_sdo_capture_time(band: str = "0304", target_size: int = 1024):
+    """获取 SDO 最新影像的实际拍摄/更新时间（北京时间）
+
+    通过 HEAD 请求读取响应头 Last-Modified（UTC），换算为 UTC+8。
+
+    Returns:
+        datetime（北京时间）或 None
+    """
+    try:
+        from datetime import datetime, timedelta
+        resolution = _pick_resolution(target_size)
+        url = f"https://sdo.gsfc.nasa.gov/assets/img/latest/latest_{resolution}_{band}.jpg"
+        resp = requests.head(url, timeout=15)
+        if resp.status_code != 200:
+            return None
+        lm = resp.headers.get("Last-Modified")
+        if not lm:
+            return None
+        # Last-Modified 是 HTTP 时间格式 (GMT/UTC)
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(lm)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=__import__("datetime").timezone.utc)
+        return dt + timedelta(hours=8)  # 转北京时间
+    except Exception as e:
+        logger.warning(f"Get SDO capture time failed: {e}")
+        return None
 
 
 def fetch_sdo_image(
@@ -50,7 +88,7 @@ def fetch_sdo_image(
     Args:
         band: 波段 (0304 / 0171 / 0304pfss / 0171pfss / HMIIC)
         target_size: 目标尺寸，自动选择 512/1024/2048/4096 中最接近的
-        force: 强制重新下载
+        force: 强制重新下载（忽略缓存有效期）
 
     Returns:
         图像文件路径，失败返回 None
@@ -62,11 +100,16 @@ def fetch_sdo_image(
     resolution = _pick_resolution(target_size)
 
     SDO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_path = SDO_CACHE_DIR / f"sdo_{band}_{resolution}.jpg"
+    cache_path = _cache_path(band, resolution)
 
+    # 缓存命中判断：文件存在且在有效期内
     if not force and cache_path.exists():
-        logger.info(f"Using cached SDO: {cache_path}")
-        return str(cache_path)
+        import time as _t
+        age = _t.time() - cache_path.stat().st_mtime
+        if age < SDO_CACHE_TTL:
+            logger.info(f"Using cached SDO (age={age:.0f}s): {cache_path}")
+            return str(cache_path)
+        logger.info(f"SDO cache expired (age={age:.0f}s), re-downloading")
 
     url = f"https://sdo.gsfc.nasa.gov/assets/img/latest/latest_{resolution}_{band}.jpg"
     logger.info(f"Fetching SDO: {url}")

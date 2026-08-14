@@ -105,6 +105,16 @@ def check_and_update_satellite() -> bool:
     auto_set = config.get("sat_auto_set_wallpaper", True)
 
     logger.info(f"Satellite update: {sat} ({color}, {size}px)")
+
+    # 影像实际拍摄时间：CIRA time_code 为 UTC，这里统一换算为北京时间(UTC+8)
+    capture_time = None
+    try:
+        from providers.geostationary import _get_time_code
+        tc, _ = _get_time_code(sat, color)          # 形如 20260814064000 (UTC)
+        capture_time = datetime.strptime(str(tc), "%Y%m%d%H%M%S") + timedelta(hours=8)
+    except Exception as e:
+        logger.warning(f"Get satellite capture time failed: {e}")
+
     path = fetch_satellite_image(satellite=sat, color=color, target_size=size)
     if not path:
         logger.warning("Satellite image download failed")
@@ -118,7 +128,7 @@ def check_and_update_satellite() -> bool:
 
     wp_path = watermark_image(path,
         left_text=f"来源: {name}",
-        right_text=f"拍摄时间: {now.strftime('%Y-%m-%d %H:%M')} (UTC+8)",
+        right_text=f"拍摄时间: {capture_time.strftime('%Y-%m-%d %H:%M') if capture_time else now.strftime('%Y-%m-%d %H:%M')} (UTC+8)",
         output_key=f"sat_{sat}")
     if set_wallpaper(
         wp_path, f"sat_{sat}", style=style,
@@ -142,7 +152,15 @@ def check_and_update_sdo() -> bool:
     name = __import__("providers.sdo", fromlist=["SDO_BANDS"]).SDO_BANDS.get(band, {}).get("name", band)
 
     logger.info(f"SDO update: {band}")
-    path = fetch_sdo_image(band=band)
+    # 影像实际拍摄/更新时间（北京时间），用于水印展示
+    capture_time = None
+    try:
+        from providers.sdo import get_sdo_capture_time
+        capture_time = get_sdo_capture_time(band=band, target_size=config.get("sdo_size", 1024))
+    except Exception as e:
+        logger.warning(f"Get SDO capture time failed: {e}")
+
+    path = fetch_sdo_image(band=band, force=True)
     if not path:
         logger.warning("SDO image download failed")
         return False
@@ -155,7 +173,7 @@ def check_and_update_sdo() -> bool:
 
     wp_path = watermark_image(path,
         left_text="来源: NASA SDO 太阳观测",
-        right_text=f"波段: {name} | {now.strftime('%Y-%m-%d %H:%M')}",
+        right_text=f"波段: {name} | {capture_time.strftime('%Y-%m-%d %H:%M') if capture_time else now.strftime('%Y-%m-%d %H:%M')}",
         output_key=f"sdo_{band}")
     if set_wallpaper(
         wp_path, f"sdo_{band}", style=style,
