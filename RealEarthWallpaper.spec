@@ -30,6 +30,7 @@ exe = EXE(
     a.datas,
     [],
     name='RealEarth',
+    icon='RealEarth.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
