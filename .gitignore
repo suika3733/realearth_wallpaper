@@ -36,3 +36,8 @@ venv/
 env/
 .venv/
 .workbuddy/
+
+# NSIS 安装包构建产物
+installer/source/
+installer/*.exe
+installer/RealEarth.ico
