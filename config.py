@@ -32,6 +32,9 @@ DEFAULT_CONFIG = {
     "earth_auto_refresh": True,         # [兼容]
     "earth_refresh_interval": 10,       # [兼容]
     "wallpaper_style": "fill",
+    "wp_scale": 1.0,                 # 壁纸图片缩放比例（0.5~2.0，配合 center 样式）
+    "wp_offset_x": 0,                # 壁纸图片水平偏移（像素）
+    "wp_offset_y": 0,                # 壁纸图片垂直偏移（像素）
     "apod_auto_set_wallpaper": True,   # APOD 每日更新后自动设为壁纸
     "sat_auto_set_wallpaper": True,    # 卫星自动刷新后自动设为壁纸
     "sdo_auto_set_wallpaper": True,    # SDO 自动刷新后自动设为壁纸
@@ -39,7 +42,7 @@ DEFAULT_CONFIG = {
     "wm_font_size": 0,                 # 水印字体大小（0=自适应）
     "wm_font_family": "msyh",          # 水印字体
     "wm_position": "top_right",        # 水印位置
-    "wm_show_sys_time": True,          # 是否显示当前系统时间
+    "wm_show_sys_time": False,         # 是否显示当前系统时间（默认关闭）
 }
 
 # 壁纸样式映射（注册表值）

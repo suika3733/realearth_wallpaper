@@ -1,6 +1,5 @@
 """Windows 壁纸设置 - 支持壁纸样式控制和图片水印"""
 import ctypes
-import datetime
 import logging
 import time
 import uuid
@@ -66,7 +65,7 @@ def watermark_image(
     font_size: int | None = None,
     font_family: str = "msyh",
     position: str = "top_right",
-    show_sys_time: bool = True,
+    show_sys_time: bool = False,
 ) -> str:
     """在图片角落添加半透明水印标注（角标风格），保存到缓存目录
 
@@ -78,7 +77,7 @@ def watermark_image(
         font_size: 字体大小（像素），None 则按图片尺寸自适应
         font_family: 字体（msyh/simhei/simsun/arial）
         position: 位置（top_right/top_left/bottom_right/bottom_left）
-        show_sys_time: 是否追加显示当前系统时间
+        show_sys_time: 是否追加显示当前系统时间（默认 False，不显示系统时间）
 
     Returns:
         带水印的图片路径
@@ -100,16 +99,11 @@ def watermark_image(
         font_main = _get_font(font_family, base_size)
         font_sub = _get_font(font_family, max(10, base_size - 4))
 
-        # 当前系统时间（可选第三行）
-        sys_time_text = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         # 文字尺寸测量
         draw_tmp = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
         lines = [(left_text, font_main)]
         if right_text:
             lines.append((right_text, font_sub))
-        if show_sys_time:
-            lines.append((sys_time_text, font_sub))
 
         text_w = 0
         text_h = 0
@@ -195,6 +189,82 @@ STYLE_REGISTRY = {
 }
 
 
+def _get_screen_size() -> tuple:
+    """获取主显示器分辨率（宽, 高）。失败时返回默认 1920x1080。"""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        w = user32.GetSystemMetrics(0)   # SM_CXSCREEN
+        h = user32.GetSystemMetrics(1)   # SM_CYSCREEN
+        if w > 0 and h > 0:
+            return (int(w), int(h))
+    except Exception as e:
+        logger.warning(f"Get screen size failed: {e}")
+    return (1920, 1080)
+
+
+def prepare_image_with_position(
+    image_path: str,
+    scale: float = 1.0,
+    offset_x: int = 0,
+    offset_y: int = 0,
+    output_key: str = "pos",
+) -> str:
+    """按用户设置的缩放比例与偏移量预处理壁纸图片
+
+    将图片缩放到指定比例后，贴到与屏幕分辨率同尺寸的空白画布上，
+    通过偏移控制图片在桌面上的位置（配合 style='center' 使用）。
+
+    Args:
+        image_path: 原始图片路径
+        scale: 缩放比例（0.5~2.0），1.0 表示原图比例
+        offset_x: 水平偏移（像素，正值向右）
+        offset_y: 垂直偏移（像素，正值向下）
+        output_key: 输出文件名键
+
+    Returns:
+        预处理后的图片路径；若无需调整则返回原图路径
+    """
+    try:
+        if abs(scale - 1.0) < 0.001 and offset_x == 0 and offset_y == 0:
+            # 无任何调整需求，直接返回原图
+            return image_path
+
+        screen_w, screen_h = _get_screen_size()
+        img = Image.open(image_path).convert("RGB")
+        iw, ih = img.size
+
+        # 按比例缩放
+        new_w = max(1, int(iw * scale))
+        new_h = max(1, int(ih * scale))
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+
+        # 画布尺寸取屏幕分辨率（不小于图片）
+        canvas_w = max(screen_w, new_w)
+        canvas_h = max(screen_h, new_h)
+
+        # 计算贴图位置（默认居中，再叠加偏移）
+        pos_x = (canvas_w - new_w) // 2 + offset_x
+        pos_y = (canvas_h - new_h) // 2 + offset_y
+
+        canvas = Image.new("RGB", (canvas_w, canvas_h), (0, 0, 0))
+        canvas.paste(img, (pos_x, pos_y))
+
+        # 保存（带时间戳唯一文件名，避免覆盖冲突）
+        ts = int(time.time())
+        uid = uuid.uuid4().hex[:6]
+        output_path = _WATERMARK_DIR / f"{output_key}_{ts}_{uid}.jpg"
+        canvas.save(str(output_path), "JPEG", quality=92)
+        logger.info(
+            f"Position prepared: scale={scale} offset=({offset_x},{offset_y}) "
+            f"screen={screen_w}x{screen_h} -> {output_path}"
+        )
+        return str(output_path)
+    except Exception as e:
+        logger.error(f"Prepare image position failed: {e}")
+        return image_path
+
+
 def set_wallpaper_style(style: str = "fill"):
     """通过注册表设置壁纸样式
 
@@ -236,13 +306,23 @@ def set_wallpaper_style(style: str = "fill"):
         logger.warning(f"Set wallpaper style failed (benign): {e}")
 
 
-def set_wallpaper(image_path: str, date_str: str = None, style: str = "fill") -> bool:
+def set_wallpaper(
+    image_path: str,
+    date_str: str = None,
+    style: str = "fill",
+    scale: float = 1.0,
+    offset_x: int = 0,
+    offset_y: int = 0,
+) -> bool:
     """设置桌面壁纸
 
     Args:
         image_path: 图片文件路径
         date_str: 日期标识（可选，用于缓存命名）
         style: 壁纸样式: center | tile | stretch | fit | fill
+        scale: 图片缩放比例（0.5~2.0），仅在 style='center' 时生效
+        offset_x: 水平偏移（像素），仅在 style='center' 时生效
+        offset_y: 垂直偏移（像素），仅在 style='center' 时生效
 
     Returns:
         是否设置成功
@@ -259,6 +339,13 @@ def set_wallpaper(image_path: str, date_str: str = None, style: str = "fill") ->
                 wp_path = wp_path.parent / f"{wp_path.stem}_{int(time.time())}.jpg"
             shutil.copy2(image_path, wp_path)
             image_path = str(wp_path)
+
+        # 位置 / 缩放预处理：仅当样式为 center 且用户设置了非默认值时生效
+        if style == "center" and (abs(scale - 1.0) > 0.001 or offset_x or offset_y):
+            image_path = prepare_image_with_position(
+                image_path, scale=scale, offset_x=offset_x, offset_y=offset_y,
+                output_key="wp_pos",
+            )
 
         # 先设置壁纸样式
         set_wallpaper_style(style)

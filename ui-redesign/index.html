@@ -983,6 +983,17 @@ body:not(.pywebview) .window-controls {
   border-color: var(--info);
 }
 
+/* Position / scale sliders */
+.wp-slider-row { margin-bottom: 10px; }
+.wp-slider-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: 4px;
+}
+.wp-slider-val { color: var(--info); font-weight: 600; }
+input[type=range].wp-range {
+  width: 100%; accent-color: var(--info); cursor: pointer; background: transparent;
+}
+
 /* Help text area */
 .help-text {
   font-size: var(--text-sm);
@@ -1069,7 +1080,7 @@ body:not(.pywebview) .window-controls {
     <div class="header-brand">
       <img class="header-logo" src="/logo.png" alt="logo">
       <div>
-        <div class="header-title">RealEarth <span class="version-tag">v3.1.0</span></div>
+        <div class="header-title">RealEarth <span class="version-tag">v3.1.1</span></div>
         <div class="header-subtitle">真实地球</div>
       </div>
     </div>
@@ -1322,6 +1333,33 @@ body:not(.pywebview) .window-controls {
           <span class="style-pill" data-value="fit">适应</span>
           <span class="style-pill selected" data-value="fill">填充（推荐）</span>
         </div>
+        <div class="form-hint" style="margin-top:4px;">选择「居中」后可调节图片位置与缩放。</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">图片位置与缩放</label>
+        <div class="wp-slider-row">
+          <div class="wp-slider-head">
+            <span>缩放比例</span>
+            <span class="wp-slider-val" id="wpScaleVal">100%</span>
+          </div>
+          <input type="range" class="wp-range" id="wpScaleInput" min="50" max="200" step="5" value="100">
+          <div class="form-hint">50% 缩小 · 100% 原始 · 200% 放大</div>
+        </div>
+        <div class="wp-slider-row">
+          <div class="wp-slider-head">
+            <span>水平位置</span>
+            <span class="wp-slider-val" id="wpOffsetXVal">0</span>
+          </div>
+          <input type="range" class="wp-range" id="wpOffsetXInput" min="-400" max="400" step="10" value="0">
+        </div>
+        <div class="wp-slider-row" style="margin-bottom:0;">
+          <div class="wp-slider-head">
+            <span>垂直位置</span>
+            <span class="wp-slider-val" id="wpOffsetYVal">0</span>
+          </div>
+          <input type="range" class="wp-range" id="wpOffsetYInput" min="-400" max="400" step="10" value="0">
+        </div>
       </div>
 
       <div class="form-group">
@@ -1356,13 +1394,6 @@ body:not(.pywebview) .window-controls {
               <option value="bottom_right">右下</option>
               <option value="bottom_left">左下</option>
             </select>
-          </div>
-          <div style="flex:1; display:flex; align-items:flex-end; justify-content:space-between; padding-bottom:4px;">
-            <div>
-              <div class="toggle-label">显示系统时间</div>
-              <div class="toggle-hint">水印追加当前时间</div>
-            </div>
-            <div class="toggle-switch on" id="wmShowSysTimeToggle"></div>
           </div>
         </div>
       </div>
@@ -1615,19 +1646,21 @@ function getWmSettings() {
     font_size: c.wm_font_size || 0,
     font_family: c.wm_font_family || 'msyh',
     position: c.wm_position || 'top_right',
-    show_sys_time: c.wm_show_sys_time !== false,
   };
 }
 
 // 生成 watermark-and-set 请求体（合并水印设置）
 function wmPayload(base) {
   const wm = getWmSettings();
+  const c = state.config || {};
   return {
     ...base,
     font_size: wm.font_size || undefined,
     font_family: wm.font_family,
     position: wm.position,
-    show_sys_time: wm.show_sys_time,
+    scale: c.wp_scale || 1.0,
+    offset_x: c.wp_offset_x || 0,
+    offset_y: c.wp_offset_y || 0,
   };
 }
 
@@ -2064,8 +2097,10 @@ async function saveSettings() {
   const wmFontSize = parseInt($('#wmFontSizeInput').value) || 0;
   const wmFontFamily = $('#wmFontFamilySelect').value;
   const wmPosition = $('#wmPositionSelect').value;
-  const wmShowSysTime = $('#wmShowSysTimeToggle').classList.contains('on');
   const sdoBand = $('#sdoBandSettingSelect').value;
+  const wpScale = (parseFloat($('#wpScaleInput').value) || 100) / 100;
+  const wpOffsetX = parseInt($('#wpOffsetXInput').value) || 0;
+  const wpOffsetY = parseInt($('#wpOffsetYInput').value) || 0;
 
   try {
     await api('/api/config', {
@@ -2081,8 +2116,10 @@ async function saveSettings() {
         wm_font_size: wmFontSize,
         wm_font_family: wmFontFamily,
         wm_position: wmPosition,
-        wm_show_sys_time: wmShowSysTime,
         sdo_band: sdoBand,
+        wp_scale: wpScale,
+        wp_offset_x: wpOffsetX,
+        wp_offset_y: wpOffsetY,
       }),
     });
     state.config = {
@@ -2096,8 +2133,10 @@ async function saveSettings() {
       wm_font_size: wmFontSize,
       wm_font_family: wmFontFamily,
       wm_position: wmPosition,
-      wm_show_sys_time: wmShowSysTime,
       sdo_band: sdoBand,
+      wp_scale: wpScale,
+      wp_offset_x: wpOffsetX,
+      wp_offset_y: wpOffsetY,
     };
     closeSettings();
     setStatus('设置已保存', 'ok');
@@ -2361,8 +2400,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (state.config.wm_position) {
       $('#wmPositionSelect').value = state.config.wm_position;
     }
-    if (state.config.wm_show_sys_time !== undefined) {
-      $('#wmShowSysTimeToggle').classList.toggle('on', state.config.wm_show_sys_time);
+    // 图片位置与缩放回显
+    if (state.config.wp_scale !== undefined) {
+      const pct = Math.round(state.config.wp_scale * 100);
+      $('#wpScaleInput').value = Math.max(50, Math.min(200, pct));
+      $('#wpScaleVal').textContent = pct + '%';
+    }
+    if (state.config.wp_offset_x !== undefined) {
+      $('#wpOffsetXInput').value = state.config.wp_offset_x;
+      $('#wpOffsetXVal').textContent = state.config.wp_offset_x;
+    }
+    if (state.config.wp_offset_y !== undefined) {
+      $('#wpOffsetYInput').value = state.config.wp_offset_y;
+      $('#wpOffsetYVal').textContent = state.config.wp_offset_y;
     }
     // 自动设为壁纸开关（卫星 / SDO）
     if (state.config.sat_auto_set_wallpaper !== undefined) {
@@ -2437,6 +2487,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#toggleSatAutoSet').addEventListener('click', () => toggleAutoSetWallpaper('sat'));
   $('#toggleSdoAutoSet').addEventListener('click', () => toggleAutoSetWallpaper('sdo'));
 
+  // 图片位置与缩放滑块实时值显示
+  $('#wpScaleInput').addEventListener('input', (e) => {
+    $('#wpScaleVal').textContent = e.target.value + '%';
+  });
+  $('#wpOffsetXInput').addEventListener('input', (e) => {
+    $('#wpOffsetXVal').textContent = e.target.value;
+  });
+  $('#wpOffsetYInput').addEventListener('input', (e) => {
+    $('#wpOffsetYVal').textContent = e.target.value;
+  });
+
   // Log viewer
   $('#btnViewLogs').addEventListener('click', openLogViewer);
   $('#closeLogModal').addEventListener('click', closeLogViewer);
@@ -2462,11 +2523,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const sw = row.querySelector('.toggle-switch');
       sw.classList.toggle('on');
     });
-  });
-
-  // 水印"显示系统时间"开关
-  $('#wmShowSysTimeToggle').addEventListener('click', () => {
-    $('#wmShowSysTimeToggle').classList.toggle('on');
   });
 
   // Style pills

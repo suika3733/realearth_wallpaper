@@ -9,6 +9,9 @@ build/
 
 # PyInstaller
 *.exe
+dist/
+dist-dir/
+build/
 
 # 本地 exe 归档（每次更新后存档一份，不推送 GitHub）
 releases/

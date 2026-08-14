@@ -73,41 +73,6 @@ _task_status = {"running": False, "message": "就绪", "type": "ok"}
 # ---- 动态时间水印 ----
 import threading
 
-_active_wallpaper = None  # 当前活跃壁纸信息（用于动态刷新系统时间）
-_dynamic_time_thread = None
-_dynamic_time_stop = threading.Event()
-
-
-def _dynamic_time_loop():
-    """每 60 秒刷新水印中的系统时间（仅当 show_sys_time=True 时）"""
-    logger.info("Dynamic time refresh thread started")
-    while not _dynamic_time_stop.is_set():
-        _dynamic_time_stop.wait(60)
-        if not _active_wallpaper or not _active_wallpaper.get("show_sys_time"):
-            continue
-        try:
-            wp = _active_wallpaper
-            wp_path = watermark_image(
-                wp["image_path"], wp["left_text"], wp["right_text"], wp["output_key"],
-                font_size=wp.get("font_size"),
-                font_family=wp.get("font_family", "msyh"),
-                position=wp.get("position", "top_right"),
-                show_sys_time=True,
-            )
-            set_wallpaper(wp_path, style=wp.get("style", "fill"))
-            logger.debug("Dynamic time watermark refreshed")
-        except Exception as e:
-            logger.warning(f"Dynamic time refresh failed: {e}")
-
-
-def _start_dynamic_time_thread():
-    global _dynamic_time_thread
-    if _dynamic_time_thread and _dynamic_time_thread.is_alive():
-        return
-    _dynamic_time_stop.clear()
-    _dynamic_time_thread = threading.Thread(target=_dynamic_time_loop, daemon=True)
-    _dynamic_time_thread.start()
-
 
 # ================================================================
 #  静态文件
@@ -163,6 +128,7 @@ def api_save_config():
         "wallpaper_style", "autostart",
         "apod_auto_set_wallpaper", "sat_auto_set_wallpaper", "sdo_auto_set_wallpaper",
         "wm_font_size", "wm_font_family", "wm_position", "wm_show_sys_time",
+        "wp_scale", "wp_offset_x", "wp_offset_y",
     ]
     for key in allowed_keys:
         if key in data:
@@ -416,7 +382,16 @@ def api_wallpaper_set():
         if not image_path or not os.path.exists(image_path):
             return jsonify({"ok": False, "error": "图片文件不存在"}), 400
 
-        success = set_wallpaper(image_path, style=style)
+        # 读取用户设置的位置/缩放参数
+        _cfg = load_config()
+        scale = float(data.get("scale", _cfg.get("wp_scale", 1.0)))
+        offset_x = int(data.get("offset_x", _cfg.get("wp_offset_x", 0)))
+        offset_y = int(data.get("offset_y", _cfg.get("wp_offset_y", 0)))
+
+        success = set_wallpaper(
+            image_path, style=style,
+            scale=scale, offset_x=offset_x, offset_y=offset_y,
+        )
         if success:
             _task_status = {"running": False, "message": "壁纸已设置", "type": "ok"}
             return jsonify({"ok": True})
@@ -432,7 +407,7 @@ def api_wallpaper_set():
 @app.route("/api/wallpaper/watermark-and-set", methods=["POST"])
 def api_wallpaper_watermark_set():
     """加水印并设置壁纸"""
-    global _task_status, _active_wallpaper
+    global _task_status
     try:
         data = request.get_json(force=True)
         image_path = data.get("path", "")
@@ -443,35 +418,27 @@ def api_wallpaper_watermark_set():
         font_size = data.get("font_size")
         font_family = data.get("font_family", "msyh")
         position = data.get("position", "top_right")
-        show_sys_time = data.get("show_sys_time", True)
 
         if not image_path or not os.path.exists(image_path):
             return jsonify({"ok": False, "error": "图片文件不存在"}), 400
+
+        # 读取用户设置的位置/缩放参数
+        _cfg = load_config()
+        scale = float(data.get("scale", _cfg.get("wp_scale", 1.0)))
+        offset_x = int(data.get("offset_x", _cfg.get("wp_offset_x", 0)))
+        offset_y = int(data.get("offset_y", _cfg.get("wp_offset_y", 0)))
 
         wp_path = watermark_image(
             image_path, left_text, right_text, output_key,
             font_size=font_size,
             font_family=font_family,
             position=position,
-            show_sys_time=show_sys_time,
         )
-        success = set_wallpaper(wp_path, style=style)
+        success = set_wallpaper(
+            wp_path, style=style,
+            scale=scale, offset_x=offset_x, offset_y=offset_y,
+        )
         if success:
-            # 保存当前壁纸信息，供动态时间刷新线程使用
-            _active_wallpaper = {
-                "image_path": image_path,
-                "left_text": left_text,
-                "right_text": right_text,
-                "output_key": output_key,
-                "style": style,
-                "font_size": font_size,
-                "font_family": font_family,
-                "position": position,
-                "show_sys_time": show_sys_time,
-            }
-            # 启用系统时间时，启动动态刷新线程
-            if show_sys_time:
-                _start_dynamic_time_thread()
             _task_status = {"running": False, "message": "水印壁纸已设置", "type": "ok"}
             return jsonify({"ok": True, "watermarked_path": wp_path})
         else:
@@ -560,7 +527,7 @@ def api_logs_read():
 @app.route("/api/version")
 def api_version():
     """返回当前版本号"""
-    return jsonify({"version": "v3.1.0"})
+    return jsonify({"version": "v3.1.1"})
 
 
 # ================================================================

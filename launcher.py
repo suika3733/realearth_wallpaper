@@ -60,6 +60,12 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 51234
 SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 
+# ---- 全局运行时引用（用于彻底关闭所有后台进程） ----
+_flask_server = None          # werkzeug make_server 返回的 server 对象
+_flask_thread = None          # Flask 服务器线程
+_tray_thread = None           # 托盘线程
+_shutting_down = False        # 退出锁，避免重复清理
+
 
 def _is_already_running() -> bool:
     """检测是否已有实例在运行（端口被占用即视为已运行）"""
@@ -109,10 +115,8 @@ class WindowAPI:
         return True
 
     def quit_app(self):
-        if _tray_icon:
-            _tray_icon.stop()
-        if _window:
-            _window.destroy()
+        # 前端「关闭软件」按钮 → 走完整清理流程，确保无后台进程残留
+        shutdown_app()
         return True
 
 
@@ -156,9 +160,8 @@ def _on_tray_show(icon, item):
 
 
 def _on_tray_quit(icon, item):
-    if _window:
-        _window.destroy()
-    icon.stop()
+    # 托盘「退出」→ 走完整清理流程，确保无后台进程残留
+    shutdown_app()
 
 
 def _run_tray():
@@ -189,20 +192,96 @@ def _on_window_restored():
 
 
 def _on_window_closing():
-    # 阻止关闭，改为隐藏到托盘
+    # 正在彻底退出时，允许窗口真正关闭（不再隐藏到托盘）
+    if _shutting_down:
+        return True
+    # 正常情况：阻止关闭，改为隐藏到托盘
     if _window:
         _window.hide()
     return False
 
 
 def start_flask():
-    flask_server.app.run(
-        host=SERVER_HOST,
-        port=SERVER_PORT,
-        debug=False,
-        threaded=True,
-        use_reloader=False,
+    global _flask_server
+    from werkzeug.serving import make_server
+
+    # 用 make_server 持有 server 对象，方便后续 shutdown() 优雅关闭
+    _flask_server = make_server(
+        SERVER_HOST, SERVER_PORT, flask_server.app,
+        threaded=True, processes=1,
     )
+    try:
+        _flask_server.serve_forever()
+    except Exception as e:
+        if not _shutting_down:
+            logger.warning(f"Flask server stopped: {e}")
+
+
+def _stop_flask():
+    """优雅关闭 Flask HTTP 服务器（阻塞直到线程结束）"""
+    global _flask_server, _flask_thread
+    if _flask_server is not None:
+        try:
+            _flask_server.shutdown()
+        except Exception as e:
+            logger.warning(f"Flask shutdown: {e}")
+        _flask_server = None
+    # 等待 Flask 线程真正结束（最多 3 秒）
+    if _flask_thread and _flask_thread.is_alive():
+        _flask_thread.join(timeout=3.0)
+    logger.info("Flask server shut down")
+
+
+def shutdown_app(force_exit: bool = True):
+    """完整关闭所有后台进程，确保退出后零残留
+
+    统一关闭顺序：
+      1. 停止后台调度器线程并等待其退出
+      2. 停止系统托盘图标
+      3. 关闭 Flask HTTP 服务器线程
+      4. 销毁 pywebview 窗口
+      5. 强制退出进程（杀掉任何残留子进程/线程）
+    """
+    global _shutting_down, _flask_server, _flask_thread, _tray_thread
+    if _shutting_down:
+        return
+    _shutting_down = True
+    logger.info("=== Shutting down RealEarth ===")
+
+    # 1. 停止调度器并等待线程退出
+    try:
+        stop_scheduler()
+        import scheduler as _sched_mod
+        _st = getattr(_sched_mod, "_scheduler_thread", None)
+        if _st and _st.is_alive():
+            _st.join(timeout=5.0)
+    except Exception as e:
+        logger.warning(f"Stop scheduler: {e}")
+
+    # 2. 停止托盘图标
+    if _tray_icon:
+        try:
+            _tray_icon.stop()
+        except Exception as e:
+            logger.warning(f"Stop tray: {e}")
+        _tray_icon = None
+
+    # 3. 关闭 Flask 服务器
+    _stop_flask()
+
+    # 4. 销毁 pywebview 窗口
+    if _window:
+        try:
+            _window.destroy()
+        except Exception as e:
+            logger.warning(f"Destroy window: {e}")
+        _window = None
+
+    logger.info("=== RealEarth shut down complete ===")
+
+    # 5. 强制退出：一次性终止所有 daemon 线程与残留子进程，保证零残留
+    if force_exit:
+        os._exit(0)
 
 
 def main():
@@ -223,9 +302,10 @@ def main():
             pass
         return
 
-    # 启动 Flask
-    t = threading.Thread(target=start_flask, daemon=True)
-    t.start()
+    # 启动 Flask（后台线程）
+    global _flask_thread, _tray_thread
+    _flask_thread = threading.Thread(target=start_flask, daemon=True)
+    _flask_thread.start()
     time.sleep(1.0)
     logger.info(f"Server ready: {SERVER_URL}")
 
@@ -257,8 +337,8 @@ def main():
         _window.events.restored += _on_window_restored
 
         # 启动系统托盘（后台线程）
-        tray_thread = threading.Thread(target=_run_tray, daemon=True)
-        tray_thread.start()
+        _tray_thread = threading.Thread(target=_run_tray, daemon=True)
+        _tray_thread.start()
 
         logger.info("Starting pywebview window (frameless)...")
         webview.start(debug=False)
@@ -276,13 +356,8 @@ def main():
         except KeyboardInterrupt:
             pass
 
-    # 退出时停止托盘
-    if _tray_icon:
-        _tray_icon.stop()
-
-    # 停止后台调度器
-    stop_scheduler()
-    logger.info("Shutting down")
+    # webview.start() 正常返回（窗口被销毁）或浏览器降级被中断
+    shutdown_app(force_exit=True)
 
 
 if __name__ == "__main__":
