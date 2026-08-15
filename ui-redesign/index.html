@@ -36,6 +36,8 @@
   --accent-sat-dim: #1a3a32;
   --accent-sdo: #e07040;     /* solar orange */
   --accent-sdo-dim: #3d2010;
+  --accent-fy4: #5a8ac8;     /* sky blue for FY-4B */
+  --accent-fy4-dim: #182838;
 
   /* Semantic */
   --success: #5cb878;
@@ -59,6 +61,7 @@
   --shadow-glow-apod: 0 0 40px rgba(201, 169, 110, 0.12);
   --shadow-glow-sat: 0 0 40px rgba(77, 171, 154, 0.12);
   --shadow-glow-sdo: 0 0 40px rgba(224, 112, 64, 0.12);
+  --shadow-glow-fy4: 0 0 40px rgba(90, 138, 200, 0.12);
 
   /* Spacing */
   --space-1: 4px;
@@ -234,6 +237,7 @@ body {
 .source-tab.apod-tab.active { color: var(--accent-apod); }
 .source-tab.sat-tab.active { color: var(--accent-sat); }
 .source-tab.sdo-tab.active { color: var(--accent-sdo); }
+.source-tab.fy4-tab.active { color: var(--accent-fy4); }
 
 .tab-dot {
   width: 7px;
@@ -244,6 +248,7 @@ body {
 .tab-dot.apod-dot { background: var(--accent-apod); }
 .tab-dot.sat-dot { background: var(--accent-sat); }
 .tab-dot.sdo-dot { background: var(--accent-sdo); }
+.tab-dot.fy4-dot { background: var(--accent-fy4); }
 
 .header-actions {
   margin-left: auto;
@@ -528,6 +533,12 @@ body:not(.pywebview) .window-controls {
     radial-gradient(circle 20% at 50% 50%, rgba(255,200,100,0.2) 0%, transparent 40%);
 }
 
+.preview-placeholder.fy4-bg {
+  background:
+    radial-gradient(circle 45% at 50% 50%, rgba(90,138,200,0.15) 0%, rgba(60,100,160,0.08) 30%, rgba(40,70,120,0.03) 55%, var(--void-800) 100%),
+    radial-gradient(circle 20% at 50% 50%, rgba(120,180,255,0.2) 0%, transparent 40%);
+}
+
 /* Nebula cloud effect for APOD */
 .nebula-cloud {
   position: absolute;
@@ -615,6 +626,7 @@ body:not(.pywebview) .window-controls {
 .empty-icon.apod-ei { background: var(--accent-apod-dim); }
 .empty-icon.sat-ei { background: var(--accent-sat-dim); }
 .empty-icon.sdo-ei { background: var(--accent-sdo-dim); }
+.empty-icon.fy4-ei { background: var(--accent-fy4-dim); }
 
 .empty-title {
   font-size: var(--text-lg);
@@ -726,6 +738,13 @@ body:not(.pywebview) .window-controls {
   font-weight: var(--weight-semibold);
 }
 .btn-sdo:hover { filter: brightness(1.15); }
+
+.btn-fy4 {
+  background: var(--accent-fy4);
+  color: var(--text-inverse);
+  font-weight: var(--weight-semibold);
+}
+.btn-fy4:hover { filter: brightness(1.15); }
 
 .btn-accent {
   background: var(--info);
@@ -1080,7 +1099,7 @@ input[type=range].wp-range {
     <div class="header-brand">
       <img class="header-logo" src="/logo.png" alt="logo">
       <div>
-        <div class="header-title">RealEarth <span class="version-tag">v3.1.4</span></div>
+        <div class="header-title">RealEarth <span class="version-tag">v3.1.5</span></div>
         <div class="header-subtitle">真实地球</div>
       </div>
     </div>
@@ -1097,6 +1116,10 @@ input[type=range].wp-range {
       <button class="source-tab sdo-tab" data-source="sdo">
         <span class="tab-dot sdo-dot"></span>
         <span>太阳观测</span>
+      </button>
+      <button class="source-tab fy4-tab" data-source="fy4">
+        <span class="tab-dot fy4-dot"></span>
+        <span>风云四号</span>
       </button>
     </div>
 
@@ -1139,7 +1162,7 @@ input[type=range].wp-range {
           <div class="sat-select-label">卫星</div>
           <select class="select-styled" id="satSelect">
             <option value="himawari">Himawari-8 亚太</option>
-            <option value="goes16">GOES-16 美洲</option>
+            <option value="goes19">GOES-19 美洲</option>
             <option value="goes18">GOES-18 美洲西</option>
             <option value="gk2a">GK2A 韩国</option>
             <option value="meteosat">Meteosat 欧洲/非洲</option>
@@ -1167,13 +1190,20 @@ input[type=range].wp-range {
         </div>
       </div>
 
-      <!-- SDO controls -->
-      <div class="sidebar-section" id="sdoSidebar" style="display:none;">
-        <div class="sidebar-label">观测波段</div>
-        <div class="radio-group" id="sdoBandGroup"></div>
+      <!-- FY-4 controls -->
+      <div class="sidebar-section" id="fy4Sidebar" style="display:none;">
+        <div class="sidebar-label">风云四号</div>
+        <div class="sat-select-group">
+          <div class="sat-select-label">分辨率</div>
+          <div class="radio-group" id="fy4SizeGroup">
+            <div class="radio-item selected" data-value="1080"><span class="radio-dot"></span>1080p</div>
+            <div class="radio-item" data-value="2048"><span class="radio-dot"></span>2K</div>
+            <div class="radio-item" data-value="3840"><span class="radio-dot"></span>4K</div>
+          </div>
+        </div>
         <div class="sidebar-info">
           <div class="sidebar-info-title">数据来源</div>
-          <div class="sidebar-info-text">NASA 太阳动力学天文台<br>拍摄频率约 15-60 分钟<br>SDO — Solar Dynamics Observatory</div>
+          <div class="sidebar-info-text">国家卫星气象中心 NSMC<br>更新频率约 15 分钟<br>风云四号 FY-4B 真彩色全圆盘</div>
         </div>
       </div>
     </aside>
@@ -1294,6 +1324,40 @@ input[type=range].wp-range {
           </div>
           <div class="control-group right">
             <button class="btn btn-primary" id="btnSetSdo">设为壁纸</button>
+          </div>
+        </div>
+      </div>
+      <!-- FY-4 Panel -->
+      <div class="panel" id="panelFy4">
+        <div class="preview-area">
+          <div class="preview-placeholder fy4-bg"></div>
+          <div class="empty-state" id="fy4Empty">
+            <div class="empty-icon fy4-ei">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent-fy4)" stroke-width="1.5">
+                <circle cx="12" cy="12" r="9"/><path d="M4 12h16M7 6a9 9 0 000 12"/><ellipse cx="12" cy="12" rx="4" ry="9"/>
+              </svg>
+            </div>
+            <div class="empty-title">获取风云四号影像</div>
+            <div class="empty-desc">点击「获取最新影像」查看风云四号 FY-4B 真彩色全圆盘图像</div>
+          </div>
+          <div class="preview-overlay" id="fy4Overlay" style="display:none;">
+            <div class="preview-meta">
+              <div class="preview-title" id="fy4Title">风云四号 FY-4B</div>
+              <div class="preview-date" id="fy4Time">NSMC · 2026-08-15 08:00</div>
+            </div>
+            <div class="preview-resolution" id="fy4Res"></div>
+          </div>
+        </div>
+        <div class="control-bar">
+          <div class="control-group">
+            <button class="btn btn-fy4" id="btnFy4Fetch">获取最新影像</button>
+            <div class="auto-toggle on" id="fy4AutoToggle">
+              <span class="auto-dot"></span>自动刷新
+            </div>
+            <span class="countdown" id="fy4Countdown">14:58</span>
+          </div>
+          <div class="control-group right">
+            <button class="btn btn-primary" id="btnSetFy4">设为壁纸</button>
           </div>
         </div>
       </div>
@@ -1432,6 +1496,14 @@ input[type=range].wp-range {
         <div>
           <div class="toggle-label">SDO 自动设为壁纸</div>
           <div class="toggle-hint">太阳图像自动刷新后自动设为壁纸</div>
+        </div>
+        <div class="toggle-switch on"></div>
+      </div>
+
+      <div class="toggle-row" id="toggleFy4AutoSet">
+        <div>
+          <div class="toggle-label">风云四号自动设为壁纸</div>
+          <div class="toggle-hint">风云四号影像自动刷新后自动设为壁纸</div>
         </div>
         <div class="toggle-switch on"></div>
       </div>
@@ -1596,7 +1668,7 @@ const state = {
   satAutoSetWallpaper: true,
   sdoAutoSetWallpaper: true,
   config: null,
-  nextRefresh: { apod: null, satellite: null, sdo: null },  // 后端下次刷新时间
+  nextRefresh: { apod: null, satellite: null, sdo: null, fy4: null },  // 后端下次刷新时间
 };
 
 // ----- DOM References -----
@@ -1709,6 +1781,11 @@ function syncSchedulerUI(sch) {
     sdoSetEl.classList.toggle('on', sch.sdo_auto_set_wallpaper);
     state.sdoAutoSetWallpaper = sch.sdo_auto_set_wallpaper;
   }
+  const fy4SetEl = $('#toggleFy4AutoSet .toggle-switch');
+  if (sch.fy4_auto_set_wallpaper !== undefined && fy4SetEl && fy4SetEl.classList.contains('on') !== sch.fy4_auto_set_wallpaper) {
+    fy4SetEl.classList.toggle('on', sch.fy4_auto_set_wallpaper);
+    state.fy4AutoSetWallpaper = sch.fy4_auto_set_wallpaper;
+  }
 
   // 立即刷新一次倒计时显示
   updateCountdowns(sch.data_source);
@@ -1717,12 +1794,33 @@ function syncSchedulerUI(sch) {
 // 基于下次刷新时间更新倒计时显示
 function updateCountdowns(dataSource) {
   const now = Date.now();
-  if (dataSource === 'satellite' && state.nextRefresh.satellite) {
-    const ms = new Date(state.nextRefresh.satellite).getTime() - now;
-    $('#satCountdown').textContent = ms > 0 ? fmtCountdown(ms) : '00:00';
-  } else if (dataSource === 'sdo' && state.nextRefresh.sdo) {
-    const ms = new Date(state.nextRefresh.sdo).getTime() - now;
-    $('#sdoCountdown').textContent = ms > 0 ? fmtCountdown(ms) : '00:00';
+  if (dataSource === 'satellite') {
+    const next = state.nextRefresh.satellite;
+    const el = $('#satCountdown');
+    if (!next) {
+      el.textContent = '--:--';
+      return;
+    }
+    const ms = new Date(next).getTime() - now;
+    el.textContent = ms > 0 ? fmtCountdown(ms) : '00:00';
+  } else if (dataSource === 'sdo') {
+    const next = state.nextRefresh.sdo;
+    const el = $('#sdoCountdown');
+    if (!next) {
+      el.textContent = '--:--';
+      return;
+    }
+    const ms = new Date(next).getTime() - now;
+    el.textContent = ms > 0 ? fmtCountdown(ms) : '00:00';
+  } else if (dataSource === 'fy4') {
+    const next = state.nextRefresh.fy4;
+    const el = $('#fy4Countdown');
+    if (!next) {
+      el.textContent = '--:--';
+      return;
+    }
+    const ms = new Date(next).getTime() - now;
+    el.textContent = ms > 0 ? fmtCountdown(ms) : '00:00';
   }
 }
 
@@ -1778,16 +1876,19 @@ function switchSource(source) {
   if (activeTab) activeTab.classList.add('active');
 
   $$('.panel').forEach(p => p.classList.remove('visible'));
-  $(`#panel${source === 'apod' ? 'Apod' : source === 'satellite' ? 'Sat' : 'Sdo'}`).classList.add('visible');
+  const panelMap = { apod: 'Apod', satellite: 'Sat', sdo: 'Sdo', fy4: 'Fy4' };
+  $(`#panel${panelMap[source]}`).classList.add('visible');
 
   $('#apodSidebar').style.display = source === 'apod' ? '' : 'none';
   $('#satSidebar').style.display = source === 'satellite' ? '' : 'none';
   $('#sdoSidebar').style.display = source === 'sdo' ? '' : 'none';
+  $('#fy4Sidebar').style.display = source === 'fy4' ? '' : 'none';
 
   const names = {
     apod: '天文图片模式 — NASA APOD 每日精选',
     satellite: '卫星影像模式 — 地球静止卫星实时影像',
-    sdo: '太阳观测模式 — NASA SDO 太阳动力学天文台'
+    sdo: '太阳观测模式 — NASA SDO 太阳动力学天文台',
+    fy4: '风云四号模式 — FY-4B 真彩色全圆盘 (NSMC)'
   };
   setStatus(names[source]);
 
@@ -2036,6 +2137,60 @@ async function setSdoWallpaper() {
 }
 
 // ================================================================
+//  FY-4 ACTIONS
+// ================================================================
+async function fetchFy4() {
+  setStatus('正在获取风云四号影像...', 'loading');
+  $('#btnFy4Fetch').disabled = true;
+  try {
+    const size = parseInt($('#fy4SizeGroup .radio-item.selected').dataset.value);
+
+    const data = await api('/api/fy4/fetch', {
+      method: 'POST',
+      body: JSON.stringify({ size: size }),
+    });
+
+    state.lastFy4Path = data.path;
+    $('#fy4Empty').style.display = 'none';
+    $('#fy4Overlay').style.display = 'flex';
+    $('#fy4Title').textContent = '风云四号 FY-4B';
+    $('#fy4Time').textContent = 'NSMC · ' + (data.capture_time || formatLocalTime(new Date()));
+    $('#fy4Res').textContent = size + 'px';
+    setPreviewImage('#panelFy4 .preview-placeholder', data.url || null);
+
+    setStatus('风云四号影像已更新 | FY-4B 真彩色', 'ok');
+  } catch (e) {
+    setStatus('风云四号获取失败: ' + e.message, 'error');
+  } finally {
+    $('#btnFy4Fetch').disabled = false;
+  }
+}
+
+async function setFy4Wallpaper() {
+  if (!state.lastFy4Path) {
+    setStatus('请先获取风云四号影像', 'warning');
+    return;
+  }
+  setStatus('正在设置壁纸...', 'loading');
+  try {
+    const style = state.config?.wallpaper_style || 'fill';
+    await api('/api/wallpaper/watermark-and-set', {
+      method: 'POST',
+      body: JSON.stringify(wmPayload({
+        path: state.lastFy4Path,
+        left_text: '来源: 风云四号 FY-4B (NSMC)',
+        right_text: '更新时间: ' + formatLocalTime(new Date()) + ' (UTC+8)',
+        output_key: 'fy4',
+        style: style,
+      })),
+    });
+    setStatus('风云四号壁纸已设置', 'ok');
+  } catch (e) {
+    setStatus('设置失败: ' + e.message, 'error');
+  }
+}
+
+// ================================================================
 //  AUTO REFRESH TOGGLES
 // ================================================================
 function toggleAutoRefresh(type) {
@@ -2045,11 +2200,16 @@ function toggleAutoRefresh(type) {
     $('#satAutoToggle').classList.toggle('on', state.satAutoRefresh);
     payload.satellite_auto_refresh = state.satAutoRefresh;
     setStatus(state.satAutoRefresh ? '卫星自动刷新已开启' : '卫星自动刷新已关闭', 'ok');
-  } else {
+  } else if (type === 'sdo') {
     state.sdoAutoRefresh = !state.sdoAutoRefresh;
     $('#sdoAutoToggle').classList.toggle('on', state.sdoAutoRefresh);
     payload.sdo_auto_refresh = state.sdoAutoRefresh;
     setStatus(state.sdoAutoRefresh ? 'SDO 自动刷新已开启' : 'SDO 自动刷新已关闭', 'ok');
+  } else if (type === 'fy4') {
+    state.fy4AutoRefresh = !state.fy4AutoRefresh;
+    $('#fy4AutoToggle').classList.toggle('on', state.fy4AutoRefresh);
+    payload.fy4_auto_refresh = state.fy4AutoRefresh;
+    setStatus(state.fy4AutoRefresh ? '风云四号自动刷新已开启' : '风云四号自动刷新已关闭', 'ok');
   }
   // 写回后端 config，调度器据此开关自动刷新
   api('/api/config', {
@@ -2064,15 +2224,19 @@ function toggleAutoSetWallpaper(type) {
   if (type === 'sat') {
     state.satAutoSetWallpaper = !state.satAutoSetWallpaper;
     payload.sat_auto_set_wallpaper = state.satAutoSetWallpaper;
-  } else {
+  } else if (type === 'sdo') {
     state.sdoAutoSetWallpaper = !state.sdoAutoSetWallpaper;
     payload.sdo_auto_set_wallpaper = state.sdoAutoSetWallpaper;
+  } else if (type === 'fy4') {
+    state.fy4AutoSetWallpaper = !state.fy4AutoSetWallpaper;
+    payload.fy4_auto_set_wallpaper = state.fy4AutoSetWallpaper;
   }
   api('/api/config', {
     method: 'POST',
     body: JSON.stringify(payload),
   }).then(() => {
-    setStatus(type === 'sat' ? '卫星自动设为壁纸设置已保存' : 'SDO 自动设为壁纸设置已保存', 'ok');
+    const msg = { sat: '卫星', sdo: 'SDO', fy4: '风云四号' };
+    setStatus(msg[type] + '自动设为壁纸设置已保存', 'ok');
   }).catch((e) => setStatus('保存失败: ' + e.message, 'error'));
 }
 
@@ -2091,6 +2255,7 @@ async function saveSettings() {
   const autoUpdate = $('#toggleAutoUpdate .toggle-switch').classList.contains('on');
   const satAutoSet = $('#toggleSatAutoSet .toggle-switch').classList.contains('on');
   const sdoAutoSet = $('#toggleSdoAutoSet .toggle-switch').classList.contains('on');
+  const fy4AutoSet = $('#toggleFy4AutoSet .toggle-switch').classList.contains('on');
   const hd = $('#toggleHD .toggle-switch').classList.contains('on');
   const autostart = $('#toggleAutostart .toggle-switch').classList.contains('on');
   const apiKey = $('#apiKeyInput').value.trim();
@@ -2111,6 +2276,7 @@ async function saveSettings() {
         auto_update: autoUpdate,
         sat_auto_set_wallpaper: satAutoSet,
         sdo_auto_set_wallpaper: sdoAutoSet,
+        fy4_auto_set_wallpaper: fy4AutoSet,
         hd: hd,
         autostart: autostart,
         wm_font_size: wmFontSize,
@@ -2128,6 +2294,7 @@ async function saveSettings() {
       auto_update: autoUpdate,
       sat_auto_set_wallpaper: satAutoSet,
       sdo_auto_set_wallpaper: sdoAutoSet,
+      fy4_auto_set_wallpaper: fy4AutoSet,
       hd,
       autostart,
       wm_font_size: wmFontSize,
@@ -2348,7 +2515,13 @@ function bindWindowControls() {
       if (window.pywebview.api.hide) window.pywebview.api.hide();
     });
     document.getElementById('exitQuit')?.addEventListener('click', () => {
-      if (window.pywebview.api.quit_app) window.pywebview.api.quit_app();
+      closeExit();
+      if (window.pywebview?.api?.quit_app) {
+        window.pywebview.api.quit_app();
+      } else {
+        // API 未就绪时，直接关闭窗口
+        window.close();
+      }
     });
   }
 }
@@ -2423,6 +2596,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       $('#toggleSdoAutoSet .toggle-switch').classList.toggle('on', state.config.sdo_auto_set_wallpaper);
       state.sdoAutoSetWallpaper = state.config.sdo_auto_set_wallpaper;
     }
+    if (state.config.fy4_auto_set_wallpaper !== undefined) {
+      $('#toggleFy4AutoSet .toggle-switch').classList.toggle('on', state.config.fy4_auto_set_wallpaper);
+      state.fy4AutoSetWallpaper = state.config.fy4_auto_set_wallpaper;
+    }
     // 同步自动刷新开关
     if (state.config.satellite_auto_refresh !== undefined) {
       state.satAutoRefresh = state.config.satellite_auto_refresh;
@@ -2431,6 +2608,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (state.config.sdo_auto_refresh !== undefined) {
       state.sdoAutoRefresh = state.config.sdo_auto_refresh;
       $('#sdoAutoToggle').classList.toggle('on', state.sdoAutoRefresh);
+    }
+    if (state.config.fy4_auto_refresh !== undefined) {
+      state.fy4AutoRefresh = state.config.fy4_auto_refresh;
+      $('#fy4AutoToggle').classList.toggle('on', state.fy4AutoRefresh);
     }
     // 同步当前数据源面板
     if (state.config.data_source && state.config.data_source !== 'apod') {
@@ -2477,6 +2658,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#btnSetSdo').addEventListener('click', setSdoWallpaper);
   $('#sdoAutoToggle').addEventListener('click', () => toggleAutoRefresh('sdo'));
 
+  $('#btnFy4Fetch').addEventListener('click', fetchFy4);
+  $('#btnSetFy4').addEventListener('click', setFy4Wallpaper);
+  $('#fy4AutoToggle').addEventListener('click', () => toggleAutoRefresh('fy4'));
+
   // Settings
   $('#btnSettings').addEventListener('click', openSettings);
   $('#closeSettings').addEventListener('click', closeSettings);
@@ -2486,6 +2671,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 设置面板中的「自动设为壁纸」开关
   $('#toggleSatAutoSet').addEventListener('click', () => toggleAutoSetWallpaper('sat'));
   $('#toggleSdoAutoSet').addEventListener('click', () => toggleAutoSetWallpaper('sdo'));
+  $('#toggleFy4AutoSet').addEventListener('click', () => toggleAutoSetWallpaper('fy4'));
 
   // 图片位置与缩放滑块实时值显示
   $('#wpScaleInput').addEventListener('input', (e) => {
@@ -2549,6 +2735,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === '1') switchSource('apod');
     if (e.key === '2') switchSource('satellite');
     if (e.key === '3') switchSource('sdo');
+    if (e.key === '4') switchSource('fy4');
   });
 
   // Countdown 精修（每秒根据后端下次刷新时间更新）

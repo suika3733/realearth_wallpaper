@@ -34,8 +34,9 @@ from wallpaper import set_wallpaper, set_wallpaper_style, watermark_image
 from scheduler import (
     start_scheduler, stop_scheduler, is_scheduler_running, get_next_refresh_info,
 )
-from providers import GEOSTATIONARY_SATELLITES, SDO_BANDS, fetch_satellite_image, fetch_sdo_image
+from providers import GEOSTATIONARY_SATELLITES, SDO_BANDS, fetch_satellite_image, fetch_sdo_image, fetch_fy4_image, get_fy4_capture_time
 from providers.sdo import test_sdo_connectivity
+from providers.fy4 import test_fy4_connectivity
 from autostart import set_autostart, is_autostart_enabled
 
 logging.basicConfig(
@@ -125,8 +126,9 @@ def api_save_config():
         "hd", "data_source", "satellite_id", "satellite_color",
         "satellite_size", "satellite_auto_refresh", "satellite_refresh_interval",
         "sdo_band", "sdo_size", "sdo_auto_refresh", "sdo_refresh_interval",
+        "fy4_size", "fy4_auto_refresh", "fy4_refresh_interval",
         "wallpaper_style", "autostart",
-        "apod_auto_set_wallpaper", "sat_auto_set_wallpaper", "sdo_auto_set_wallpaper",
+        "apod_auto_set_wallpaper", "sat_auto_set_wallpaper", "sdo_auto_set_wallpaper", "fy4_auto_set_wallpaper",
         "wm_font_size", "wm_font_family", "wm_position", "wm_show_sys_time",
         "wp_scale", "wp_offset_x", "wp_offset_y",
     ]
@@ -367,6 +369,55 @@ def api_sdo_test():
 
 
 # ================================================================
+#  风云四号
+# ================================================================
+
+@app.route("/api/fy4/fetch", methods=["POST"])
+def api_fy4_fetch():
+    """获取风云四号影像"""
+    global _task_status
+    _task_status = {"running": True, "message": "正在获取风云四号影像...", "type": "loading"}
+
+    try:
+        data = request.get_json(force=True) or {}
+        size = data.get("size", 1080)
+
+        path = fetch_fy4_image(target_size=size)
+        if not path:
+            _task_status = {"running": False, "message": "风云四号影像获取失败", "type": "error"}
+            return jsonify({"ok": False, "error": "下载失败"}), 500
+
+        capture_time = None
+        try:
+            capture_time = get_fy4_capture_time()
+        except Exception:
+            pass
+
+        _task_status = {
+            "running": False,
+            "message": "风云四号影像已更新 | FY-4B 真彩色",
+            "type": "ok",
+        }
+        return jsonify({
+            "ok": True,
+            "path": path,
+            "url": _cache_path_to_url(path),
+            "capture_time": capture_time.strftime("%Y-%m-%d %H:%M") if capture_time else None,
+        })
+    except Exception as e:
+        logger.error(f"FY-4 fetch failed: {e}")
+        _task_status = {"running": False, "message": f"获取失败: {e}", "type": "error"}
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/fy4/test", methods=["POST"])
+def api_fy4_test():
+    """测试 NSMC 风云四号服务器连通性"""
+    result = test_fy4_connectivity()
+    return jsonify(result)
+
+
+# ================================================================
 #  壁纸设置
 # ================================================================
 
@@ -527,7 +578,7 @@ def api_logs_read():
 @app.route("/api/version")
 def api_version():
     """返回当前版本号"""
-    return jsonify({"version": "v3.1.4"})
+    return jsonify({"version": "v3.1.5"})
 
 
 # ================================================================
