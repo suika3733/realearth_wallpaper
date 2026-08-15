@@ -463,6 +463,16 @@ body:not(.pywebview) .window-controls {
   line-height: var(--leading-relaxed);
 }
 
+.sat-hint {
+  font-size: var(--text-xs);
+  color: var(--accent-fy4, #5a8ac8);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(90, 138, 200, 0.08);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--accent-fy4, #5a8ac8);
+}
+
 /* ----- Main Content ----- */
 .main {
   flex: 1;
@@ -1175,6 +1185,7 @@ input[type=range].wp-range {
             <div class="radio-item selected" data-value="natural_color"><span class="radio-dot"></span>自然色</div>
             <div class="radio-item" data-value="geocolor"><span class="radio-dot"></span>地球色（含夜景）</div>
           </div>
+          <div class="sat-hint" id="satColorHint" style="display:none;">风云四号固定为真彩色，色彩模式不适用</div>
         </div>
         <div class="sat-select-group">
           <div class="sat-select-label">分辨率</div>
@@ -2673,6 +2684,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#btnSatFetch').addEventListener('click', fetchSatellite);
   $('#btnSetSat').addEventListener('click', setSatWallpaper);
   $('#satAutoToggle').addEventListener('click', () => toggleAutoRefresh('sat'));
+
+  // 卫星选择变更时更新颜色模式提示
+  $('#satSelect').addEventListener('change', () => {
+    const isFy4 = $('#satSelect').value === 'fy4b';
+    $('#satColorHint').style.display = isFy4 ? '' : 'none';
+  });
+  // 初始化提示状态
+  $('#satColorHint').style.display = ($('#satSelect').value === 'fy4b') ? '' : 'none';
 
   // SDO buttons
   $('#btnSdoFetch').addEventListener('click', fetchSdo);
