@@ -2072,8 +2072,8 @@ async function fetchSatellite() {
     $('#satEmpty').style.display = 'none';
     $('#satOverlay').style.display = 'flex';
     $('#satTitle').textContent = data.satellite_name || satId;
-    const now = new Date();
-    $('#satTime').textContent = now.toISOString().replace('T', ' ').substring(0, 16) + ' UTC+8';
+    // 使用后端返回的实际拍摄时间，如果没有则回退到当前时间
+    $('#satTime').textContent = (data.capture_time || formatLocalTime(new Date())) + ' UTC+8';
     $('#satRes').textContent = size + 'px';
     setPreviewImage('#panelSat .preview-placeholder', data.url || null);
 

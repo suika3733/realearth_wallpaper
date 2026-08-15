@@ -34,7 +34,7 @@ from wallpaper import set_wallpaper, set_wallpaper_style, watermark_image
 from scheduler import (
     start_scheduler, stop_scheduler, is_scheduler_running, get_next_refresh_info,
 )
-from providers import GEOSTATIONARY_SATELLITES, SDO_BANDS, fetch_satellite_image, fetch_sdo_image, fetch_fy4_image, get_fy4_capture_time
+from providers import GEOSTATIONARY_SATELLITES, SDO_BANDS, fetch_satellite_image, fetch_sdo_image, fetch_fy4_image, get_fy4_capture_time, get_noaa_goes_capture_time
 from providers.sdo import test_sdo_connectivity
 from providers.fy4 import test_fy4_connectivity
 from autostart import set_autostart, is_autostart_enabled
@@ -294,6 +294,21 @@ def api_satellite_fetch():
         sat_info = GEOSTATIONARY_SATELLITES.get(satellite, {})
         sat_name = sat_info.get("name", satellite)
 
+        # 获取影像实际拍摄时间
+        capture_time = None
+        try:
+            src = sat_info.get("source")
+            if src == "noaa":
+                capture_time = get_noaa_goes_capture_time(satellite.replace("-", ""))
+            elif src == "fy4":
+                capture_time = get_fy4_capture_time()
+            else:
+                from providers.geostationary import _get_time_code
+                tc, _ = _get_time_code(satellite, color)
+                capture_time = datetime.strptime(str(tc), "%Y%m%d%H%M%S") + timedelta(hours=8)
+        except Exception as e:
+            logger.warning(f"Get capture time failed: {e}")
+
         _task_status = {
             "running": False,
             "message": f"卫星影像已更新 | {sat_name}",
@@ -305,6 +320,7 @@ def api_satellite_fetch():
             "url": _cache_path_to_url(path),
             "satellite": satellite,
             "satellite_name": sat_name,
+            "capture_time": capture_time.strftime("%Y-%m-%d %H:%M") if capture_time else None,
         })
     except Exception as e:
         logger.error(f"Satellite fetch failed: {e}")
