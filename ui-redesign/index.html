@@ -2548,12 +2548,27 @@ function bindWindowControls() {
     });
     document.getElementById('exitQuit')?.addEventListener('click', () => {
       closeExit();
-      if (window.pywebview?.api?.quit_app) {
-        window.pywebview.api.quit_app();
-      } else {
-        // API 未就绪时，直接关闭窗口
+      // 双重保险退出：先调用后端完整清理，再前端强制关闭窗口
+      const doQuit = () => {
+        if (window.pywebview?.api?.quit_app) {
+          try {
+            window.pywebview.api.quit_app();
+          } catch (e) {
+            console.error('quit_app failed:', e);
+          }
+        }
+        // 无论后端是否响应，前端都尝试关闭窗口
         window.close();
-      }
+        // 兜底：3 秒后如果窗口还在，再次强制关闭
+        setTimeout(() => {
+          window.close();
+          // 最后手段：通知后端强制终止（通过页面卸载）
+          if (window.pywebview?.api?.quit_app) {
+            try { window.pywebview.api.quit_app(); } catch (e) {}
+          }
+        }, 3000);
+      };
+      doQuit();
     });
   }
 }
@@ -2570,6 +2585,13 @@ function initWindowControls() {
 // ================================================================
 //  INITIALIZATION
 // ================================================================
+// 页面关闭/刷新时通知后端退出（防止直接关窗口导致后台残留）
+window.addEventListener('beforeunload', () => {
+  if (window.pywebview?.api?.quit_app) {
+    try { window.pywebview.api.quit_app(); } catch (e) {}
+  }
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
   // ---- Window controls (frameless pywebview) ----
   initWindowControls();

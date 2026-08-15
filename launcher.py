@@ -269,19 +269,111 @@ def shutdown_app(force_exit: bool = True):
     # 3. 关闭 Flask 服务器
     _stop_flask()
 
-    # 4. 销毁 pywebview 窗口
+    # 4. 销毁 pywebview 窗口（必须在主线程调用，否则可能死锁）
+    # 使用 webview 模块的窗口关闭功能，从主线程执行
     if _window:
         try:
-            _window.destroy()
+            # 先显示窗口（隐藏状态下 destroy 可能无效）
+            _window.show()
+            # 使用 webview 的窗口关闭 API
+            _window.closing = True
         except Exception as e:
-            logger.warning(f"Destroy window: {e}")
+            logger.warning(f"Close window: {e}")
         _window = None
 
     logger.info("=== RealEarth shut down complete ===")
 
-    # 5. 强制退出：一次性终止所有 daemon 线程与残留子进程，保证零残留
+    # 5. 强制退出：Windows 下使用 ExitProcess 确保所有线程和子进程被终止
     if force_exit:
+        _force_exit_process()
+
+
+def _force_exit_process():
+    """强制终止当前进程及其所有子进程，确保零残留"""
+    import ctypes
+    try:
+        # 获取当前进程 ID
+        pid = os.getpid()
+        # 先尝试终止 WebView2 子进程（pywebview 在 Windows 下使用 Edge WebView2）
+        _kill_webview2_children()
+        # 使用 Windows API ExitProcess 强制退出（比 os._exit 更彻底）
+        ctypes.windll.kernel32.ExitProcess(0)
+    except Exception:
+        pass
+    # 兜底
+    try:
         os._exit(0)
+    except Exception:
+        pass
+    # 最后手段
+    import signal
+    try:
+        os.kill(os.getpid(), signal.SIGKILL)
+    except Exception:
+        pass
+
+
+def _kill_webview2_children():
+    """终止当前进程的 WebView2 子进程，避免残留"""
+    try:
+        import subprocess
+        import ctypes
+        from ctypes import wintypes
+
+        # 获取当前进程 ID
+        current_pid = os.getpid()
+
+        # 使用 taskkill 终止所有 WebView2 子进程
+        # WebView2 进程通常包含 "msedgewebview2" 或 "WebView2" 在命令行中
+        try:
+            subprocess.run(
+                ['taskkill', '/F', '/IM', 'msedgewebview2.exe', '/T'],
+                capture_output=True, timeout=5
+            )
+        except Exception:
+            pass
+
+        # 使用 Windows API 枚举并终止子进程
+        kernel32 = ctypes.windll.kernel32
+        TH32CS_SNAPPROCESS = 0x00000002
+
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.POINTER(wintypes.ULONG)),
+                ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", wintypes.LONG),
+                ("dwFlags", wintypes.DWORD),
+                ("szExeFile", wintypes.CHAR * 260),
+            ]
+
+        hSnapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if hSnapshot == -1:
+            return
+
+        entry = PROCESSENTRY32()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
+
+        if kernel32.Process32First(hSnapshot, ctypes.byref(entry)):
+            while True:
+                if entry.th32ParentProcessID == current_pid:
+                    try:
+                        hChild = kernel32.OpenProcess(1, False, entry.th32ProcessID)
+                        if hChild:
+                            kernel32.TerminateProcess(hChild, 0)
+                            kernel32.CloseHandle(hChild)
+                    except Exception:
+                        pass
+                if not kernel32.Process32Next(hSnapshot, ctypes.byref(entry)):
+                    break
+
+        kernel32.CloseHandle(hSnapshot)
+    except Exception:
+        pass
 
 
 def main():
