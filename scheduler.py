@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 _scheduler_thread = None
 _stop_event = threading.Event()
 
+# 调度器轮询间隔（秒）。改为短轮询而非长时间阻塞等待，保证：
+# 1) 切换数据源（apod/satellite/sdo/fy4）能在 POLL_INTERVAL 秒内即时生效
+# 2) 自动刷新/自动设壁纸开关变更能快速响应
+# 旧实现用 _stop_event.wait(3600) 等长时间阻塞，导致切换数据源后调度器要等当前等待结束
+# 才能读到新配置，表现为「自动刷新/自动设壁纸全部失效」。
+POLL_INTERVAL = 15
+
 # 各数据源下次刷新时间（供前端展示倒计时）
 _next_refresh = {
     "apod": None,
@@ -266,6 +273,20 @@ def get_next_refresh_info() -> dict:
     return info
 
 
+def _interruptible_wait(seconds: float, step: float = 3.0):
+    """可中断的等待：以 step 秒为粒度分段等待，避免长时间阻塞导致配置变更无法实时生效。
+
+    旧实现直接调用 _stop_event.wait(3600) 等长时间阻塞，调度器在等待期间不会重新读取
+    配置，导致用户切换数据源或开关后，需要等到当前等待结束才能生效（APOD 分支最长可达 1 天）。
+    改为分段等待后，每次循环开头都会重新 load_config()，配置变更在 POLL_INTERVAL 秒内生效。
+    """
+    remaining = seconds
+    while remaining > 0 and not _stop_event.is_set():
+        s = min(step, remaining)
+        _stop_event.wait(s)
+        remaining -= s
+
+
 def _scheduler_loop():
     global _next_refresh, _last_refresh_time
     logger.info("Scheduler started")
@@ -283,77 +304,72 @@ def _scheduler_loop():
             if data_source == "satellite":
                 if not sat_auto:
                     _next_refresh["satellite"] = None
-                    _stop_event.wait(15)
-                    continue
-                if _due("satellite", sat_interval):
+                elif _due("satellite", sat_interval):
                     _last_refresh_time["satellite"] = datetime.now()
                     _next_refresh["satellite"] = _last_refresh_time["satellite"] + timedelta(minutes=sat_interval)
                     logger.info(f"Satellite refresh due, running check (interval={sat_interval}m)")
                     check_and_update_satellite()
-                _stop_event.wait(15)
+                else:
+                    base = _last_refresh_time["satellite"] or datetime.now()
+                    _next_refresh["satellite"] = base + timedelta(minutes=sat_interval)
 
             elif data_source == "sdo":
                 if not sdo_auto:
                     _next_refresh["sdo"] = None
-                    _stop_event.wait(15)
-                    continue
-                if _due("sdo", sdo_interval):
+                elif _due("sdo", sdo_interval):
                     _last_refresh_time["sdo"] = datetime.now()
                     _next_refresh["sdo"] = _last_refresh_time["sdo"] + timedelta(minutes=sdo_interval)
                     logger.info(f"SDO refresh due, running check (interval={sdo_interval}m)")
                     check_and_update_sdo()
-                _stop_event.wait(15)
+                else:
+                    base = _last_refresh_time["sdo"] or datetime.now()
+                    _next_refresh["sdo"] = base + timedelta(minutes=sdo_interval)
 
             elif data_source == "fy4":
                 fy4_auto = config.get("fy4_auto_refresh", True)
                 fy4_interval = config.get("fy4_refresh_interval", 15)
                 if not fy4_auto:
                     _next_refresh["fy4"] = None
-                    _stop_event.wait(15)
-                    continue
-                if _due("fy4", fy4_interval):
+                elif _due("fy4", fy4_interval):
                     _last_refresh_time["fy4"] = datetime.now()
                     _next_refresh["fy4"] = _last_refresh_time["fy4"] + timedelta(minutes=fy4_interval)
                     logger.info(f"FY-4 refresh due, running check (interval={fy4_interval}m)")
                     check_and_update_fy4()
-                _stop_event.wait(15)
+                else:
+                    base = _last_refresh_time["fy4"] or datetime.now()
+                    _next_refresh["fy4"] = base + timedelta(minutes=fy4_interval)
 
             else:
-                # NASA APOD: 每天检查一次
+                # NASA APOD：每日在 update_time 之后检查一次
                 if not apod_auto:
                     _next_refresh["apod"] = None
-                    _stop_event.wait(15)
-                    continue
-
-                today = datetime.now().strftime("%Y-%m-%d")
-                last_update = config.get("last_update") or ""
-                if last_update.startswith(today):
+                else:
+                    today = datetime.now().strftime("%Y-%m-%d")
                     update_time = config.get("update_time", "09:00")
-                    tomorrow = datetime.now() + timedelta(days=1)
+                    now = datetime.now()
                     try:
-                        next_run = datetime.strptime(
-                            f"{tomorrow.strftime('%Y-%m-%d')} {update_time}",
-                            "%Y-%m-%d %H:%M"
-                        )
-                        _next_refresh["apod"] = next_run
-                        wait_seconds = (next_run - datetime.now()).total_seconds()
-                        wait_seconds = max(60, min(wait_seconds, 86400))
+                        update_dt = datetime.strptime(f"{today} {update_time}", "%Y-%m-%d %H:%M")
                     except ValueError:
-                        _next_refresh["apod"] = datetime.now() + timedelta(hours=1)
-                        wait_seconds = 3600
+                        update_dt = now
+                    past_update_time = now >= update_dt
+                    already = (config.get("last_update") or "").startswith(today)
 
-                    logger.info(f"Already updated today, wait {wait_seconds:.0f}s")
-                    _stop_event.wait(wait_seconds)
-                    continue
+                    if already or not past_update_time:
+                        # 今天已更新，或还没到今日更新时间 -> 暂不刷新
+                        _next_refresh["apod"] = update_dt if not already else (update_dt + timedelta(days=1))
+                    else:
+                        # 今天未更新且已过更新时间 -> 立即刷新
+                        _last_refresh_time["apod"] = now
+                        _next_refresh["apod"] = now + timedelta(hours=1)
+                        logger.info("APOD daily update due, running check")
+                        check_and_update()
 
-                _next_refresh["apod"] = datetime.now() + timedelta(hours=1)
-                _last_refresh_time["apod"] = datetime.now()
-                check_and_update()
-                _stop_event.wait(3600)
+            # 关键修复：不再长时间阻塞，改为短轮询，使数据源/开关变更在 POLL_INTERVAL 秒内即时生效
+            _interruptible_wait(POLL_INTERVAL)
 
         except Exception as e:
             logger.error(f"Scheduler error: {e}")
-            _stop_event.wait(1800)
+            _interruptible_wait(30)
 
     logger.info("Scheduler stopped")
 
