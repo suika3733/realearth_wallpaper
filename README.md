@@ -16,12 +16,12 @@
 
 ### 🛰 卫星影像模式
 - 支持 **6 颗地球静止卫星**：
-  - GOES-16 (美洲)、GOES-18 (美洲西)
+  - GOES-19 (美洲)、GOES-18 (美洲西)、GOES-16 (美洲东)
   - Himawari-8 (亚太)、GK2A (韩国)
-  - Meteosat-0deg (欧洲/非洲)、Meteosat-9 (印度洋)
+  - 风云四号 FY-4B (中国)
 - 颜色模式：自然色 / 地球色 (含夜景)
 - 分辨率可选：标准 / 高清 / 超清（瓦片拼接）
-- 基于 **CIRA RAMMB-Slider** 数据
+- 数据源：**CIRA RAMMB-Slider**、**NOAA STAR/NESDIS**、**国家卫星气象中心 (NSMC)**
 - 每 10 分钟自动刷新
 
 ### ☀ 太阳观测模式
@@ -107,7 +107,9 @@ pyinstaller --onefile --windowed --name "LiveEarthWallpaper" --collect-all PIL m
 | 数据 | 来源 |
 |------|------|
 | 天文图片 | [NASA APOD API](https://api.nasa.gov/) |
-| 卫星影像 | [CIRA RAMMB-Slider](https://rammb-slider.cira.colostate.edu) |
+| 卫星影像 (GOES-19/18, Himawari-8, GK2A) | [CIRA RAMMB-Slider](https://rammb-slider.cira.colostate.edu) |
+| 卫星影像 (GOES-16) | [NOAA STAR/NESDIS](https://www.star.nesdis.noaa.gov/) |
+| 卫星影像 (风云四号 FY-4B) | [国家卫星气象中心 NSMC](https://www.nsmc.org.cn/) |
 | 太阳图像 | [NASA SDO](https://sdo.gsfc.nasa.gov) |
 
 ## 致谢

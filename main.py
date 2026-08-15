@@ -773,9 +773,16 @@ class NASAApp:
         """更新卫星信息卡片"""
         sat = self.selected_satellite.get()
         info = GEOSTATIONARY_SATELLITES.get(sat, {})
+        src = info.get("source")
+        if src == "noaa":
+            src_name = "NOAA STAR/NESDIS"
+        elif src == "fy4":
+            src_name = "国家卫星气象中心 NSMC"
+        else:
+            src_name = "CIRA RAMMB-Slider"
         self.sat_info_label.config(
             text=f"卫星: {info.get('name', sat)}\n\n"
-                 f"数据源\n━━━━━━━━━━\nCIRA RAMMB-Slider\n\n"
+                 f"数据源\n━━━━━━━━━━\n{src_name}\n\n"
                  f"区域\n━━━━━━━━━━\n{info.get('region', '-')}\n\n"
                  f"更新频率\n━━━━━━━━━━\n约每 10 分钟\n\n"
                  f"颜色模式\n━━━━━━━━━━\n自然色/地球色"
@@ -1295,11 +1302,11 @@ class NASAApp:
 
 🛰 卫星影像 — 多卫星实时影像
 • 支持 6 颗地球静止卫星：
-  GOES-16/18 (美洲)、Himawari-8 (亚太)、
-  GK2A (韩国)、Meteosat (欧洲/非洲/印度洋)
+  GOES-19/18/16 (美洲)、Himawari-8 (亚太)、
+  GK2A (韩国)、风云四号 FY-4B (中国)
 • 颜色模式：自然色 / 地球色 (含夜景)
 • 分辨率：标准 / 高清 / 超清
-• 基于 CIRA RAMMB-Slider 数据
+• 数据源：CIRA RAMMB-Slider / NOAA / NSMC
 • 开启自动刷新，每 10 分钟自动更新
 
 ☀ 太阳观测 — NASA SDO 太阳图像

@@ -6,6 +6,7 @@ from .geostationary import (
 )
 from .sdo import SDO_BANDS, fetch_sdo_image
 from .fy4 import fetch_fy4_image, get_fy4_capture_time, test_fy4_connectivity
+from .noaa_goes import fetch_noaa_goes_image, get_noaa_goes_capture_time, test_noaa_goes_connectivity
 
 __all__ = [
     "GEOSTATIONARY_SATELLITES",
@@ -16,4 +17,7 @@ __all__ = [
     "fetch_fy4_image",
     "get_fy4_capture_time",
     "test_fy4_connectivity",
+    "fetch_noaa_goes_image",
+    "get_noaa_goes_capture_time",
+    "test_noaa_goes_connectivity",
 ]

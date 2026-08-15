@@ -111,9 +111,20 @@ def check_and_update_satellite() -> bool:
     # 影像实际拍摄时间：CIRA time_code 为 UTC，这里统一换算为北京时间(UTC+8)
     capture_time = None
     try:
-        from providers.geostationary import _get_time_code
-        tc, _ = _get_time_code(sat, color)          # 形如 20260814064000 (UTC)
-        capture_time = datetime.strptime(str(tc), "%Y%m%d%H%M%S") + timedelta(hours=8)
+        from providers.geostationary import GEOSTATIONARY_SATELLITES as _SATS, _get_time_code
+        _src = _SATS.get(sat, {}).get("source")
+        # NOAA GOES 系列走 NOAA 的 Last-Modified 时间
+        if _src == "noaa":
+            from providers.noaa_goes import get_noaa_goes_capture_time
+            capture_time = get_noaa_goes_capture_time(sat.replace("-", ""))
+        # 风云四号走 NSMC 的 Last-Modified 时间
+        elif _src == "fy4":
+            from providers.fy4 import get_fy4_capture_time
+            capture_time = get_fy4_capture_time()
+        # 其余走 CIRA time_code
+        else:
+            tc, _ = _get_time_code(sat, color)      # 形如 20260814064000 (UTC)
+            capture_time = datetime.strptime(str(tc), "%Y%m%d%H%M%S") + timedelta(hours=8)
     except Exception as e:
         logger.warning(f"Get satellite capture time failed: {e}")
 

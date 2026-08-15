@@ -35,10 +35,10 @@ _TIMEOUT = 25
 GEOSTATIONARY_SATELLITES = {
     "goes-19":      {"name": "GOES-19 (美洲)",      "size": 678, "region": "americas"},
     "goes-18":      {"name": "GOES-18 (美洲西)",     "size": 678, "region": "americas"},
+    "goes-16":      {"name": "GOES-16 (美洲东)",     "size": 678, "region": "americas", "source": "noaa"},
     "himawari":     {"name": "Himawari-8 (亚太)",   "size": 688, "region": "asia_pacific"},
     "gk2a":         {"name": "GK2A (韩国)",          "size": 688, "region": "asia_pacific"},
-    "meteosat-0deg": {"name": "Meteosat 0度 (欧洲/非洲)", "size": 464, "region": "europe_africa"},
-    "meteosat-9":   {"name": "Meteosat-9 (印度洋)",  "size": 464, "region": "indian_ocean"},
+    "fy4b":         {"name": "风云四号 FY-4B (中国)", "size": 10992, "region": "asia_pacific", "source": "fy4"},
 }
 
 SATELLITE_SIZES = {k: v["size"] for k, v in GEOSTATIONARY_SATELLITES.items()}
@@ -100,8 +100,6 @@ def _calc_scale(satellite: str, target_size: int) -> int:
     ratio = target_size / base / 1.2
     scale = int(ratio).bit_length()  # log2 取整
     scale = max(0, min(scale, 4))
-    if satellite.startswith("meteosat") and scale == 4:
-        scale = 3  # Meteosat 最大 8 倍
     return scale
 
 
@@ -174,6 +172,15 @@ def fetch_satellite_image(
     if color not in COLOR_MODES:
         logger.error(f"Unknown color mode: {color}")
         return None
+
+    # NOAA GOES 系列（goes-16 等）：走 NOAA 官方整图数据源，非 CIRA 瓦片
+    if GEOSTATIONARY_SATELLITES[satellite].get("source") == "noaa":
+        return _fetch_noaa_goes(satellite, target_size, force)
+
+    # 风云四号 FY-4B：走 NSMC 国家卫星气象中心数据源
+    if GEOSTATIONARY_SATELLITES[satellite].get("source") == "fy4":
+        from .fy4 import fetch_fy4_image
+        return fetch_fy4_image(target_size=target_size, force=force)
 
     try:
         scale = _calc_scale(satellite, target_size)
@@ -256,3 +263,35 @@ def fetch_satellite_image(
     canvas.save(str(cache_path), "JPEG", quality=94)
     logger.info(f"Saved: {cache_path} ({full_w}x{full_h})")
     return str(cache_path)
+
+
+# ---------------------------------------------------------------------------
+# NOAA GOES 整图数据源（非 CIRA 瓦片）
+# ---------------------------------------------------------------------------
+def _fetch_noaa_goes(satellite: str, target_size: int, force: bool) -> str | None:
+    """通过 NOAA 官方数据源获取 GOES 全盘影像
+
+    NOAA 直接提供整张全盘图（约 10MB），与 CIRA 的瓦片拼接不同。
+    使用较长的缓存有效期避免频繁下载大图。
+
+    Args:
+        satellite: 卫星标识（goes-16 等，映射到 NOAA URL）
+        target_size: 目标短边尺寸
+        force: 强制重新下载
+
+    Returns:
+        图像文件路径，失败返回 None
+    """
+    from providers.noaa_goes import fetch_noaa_goes_image
+
+    # 卫星标识映射：goes-16 -> goes16
+    noaa_id = satellite.replace("-", "")
+
+    try:
+        return fetch_noaa_goes_image(satellite=noaa_id, target_size=target_size, force=force)
+    except Exception as e:
+        logger.error(f"NOAA GOES fetch failed ({satellite}): {e}")
+        raise ConnectionError(
+            f"NOAA GOES-16 影像获取失败: {e}。"
+            f"NOAA 服务器位于美国，国内访问可能需要代理/VPN。"
+        )

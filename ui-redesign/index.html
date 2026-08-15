@@ -1162,11 +1162,11 @@ input[type=range].wp-range {
           <div class="sat-select-label">卫星</div>
           <select class="select-styled" id="satSelect">
             <option value="himawari">Himawari-8 亚太</option>
-            <option value="goes19">GOES-19 美洲</option>
-            <option value="goes18">GOES-18 美洲西</option>
+            <option value="goes-19">GOES-19 美洲</option>
+            <option value="goes-18">GOES-18 美洲西</option>
+            <option value="goes-16">GOES-16 美洲东</option>
             <option value="gk2a">GK2A 韩国</option>
-            <option value="meteosat">Meteosat 欧洲/非洲</option>
-            <option value="meteosat-9">Meteosat-9 印度洋</option>
+            <option value="fy4b">风云四号 FY-4B 中国</option>
           </select>
         </div>
         <div class="sat-select-group">
@@ -1186,7 +1186,7 @@ input[type=range].wp-range {
         </div>
         <div class="sidebar-info">
           <div class="sidebar-info-title">数据来源</div>
-          <div class="sidebar-info-text">CIRA RAMMB-Slider<br>更新频率约 10 分钟<br>实时地球静止卫星影像</div>
+          <div class="sidebar-info-text">CIRA RAMMB-Slider + NOAA + NSMC<br>更新频率约 10 分钟<br>实时地球静止卫星影像（6 颗）</div>
         </div>
       </div>
 
@@ -1558,8 +1558,8 @@ input[type=range].wp-range {
         <h3>卫星影像 — 多卫星实时影像</h3>
         <ul>
           <li>支持 6 颗地球静止卫星</li>
-          <li>GOES-16/18（美洲）、Himawari-8（亚太）</li>
-          <li>GK2A（韩国）、Meteosat（欧洲/非洲/印度洋）</li>
+          <li>GOES-19/18/16（美洲）、Himawari-8（亚太）</li>
+          <li>GK2A（韩国）、风云四号 FY-4B（中国）</li>
           <li>色彩模式：自然色 / 地球色（含夜景）</li>
           <li>开启自动刷新，每 10 分钟自动更新</li>
         </ul>
@@ -2023,6 +2023,17 @@ async function setApodWallpaper() {
 // ================================================================
 //  SATELLITE ACTIONS
 // ================================================================
+// 卫星 ID → 友好显示名（用于水印来源标签）
+const SAT_NAMES = {
+  'himawari': 'Himawari-8 亚太',
+  'goes-19': 'GOES-19 美洲',
+  'goes-18': 'GOES-18 美洲西',
+  'goes-16': 'GOES-16 美洲东',
+  'gk2a': 'GK2A 韩国',
+  'fy4b': '风云四号 FY-4B 中国',
+};
+function satDisplayName(id) { return SAT_NAMES[id] || id; }
+
 async function fetchSatellite() {
   setStatus('正在获取卫星影像...', 'loading');
   $('#btnSatFetch').disabled = true;
@@ -2035,6 +2046,16 @@ async function fetchSatellite() {
       method: 'POST',
       body: JSON.stringify({ satellite_id: satId, color: color, size: size }),
     });
+
+    // 持久化当前卫星选择，便于调度器自动刷新沿用
+    await api('/api/config', {
+      method: 'POST',
+      body: JSON.stringify({
+        satellite_id: satId,
+        satellite_color: color,
+        satellite_size: size,
+      }),
+    }).catch(() => {});
 
     state.lastSatPath = data.path;
     $('#satEmpty').style.display = 'none';
@@ -2066,7 +2087,7 @@ async function setSatWallpaper() {
       method: 'POST',
       body: JSON.stringify(wmPayload({
         path: state.lastSatPath,
-        left_text: '来源: ' + (satId === 'himawari' ? 'Himawari-8 亚太' : satId.toUpperCase()),
+        left_text: '来源: ' + satDisplayName(satId),
         right_text: '影像时间: ' + formatLocalTime(new Date()),
         output_key: 'sat_' + satId,
         style: style,
